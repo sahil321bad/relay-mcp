@@ -4,8 +4,10 @@
 import type { UserRow } from './auth';
 import { ensureAccessToken, google } from './google';
 
-function b64url(s: string): string {
-  return Buffer.from(s, 'utf8').toString('base64url');
+// Gmail's `raw` field expects standard base64 (RFC 4648 §4, WITH padding), not
+// URL-safe base64url. Use Buffer.toString('base64').
+function b64(s: string): string {
+  return Buffer.from(s, 'utf8').toString('base64');
 }
 
 function buildRawMessage(args: any): string {
@@ -15,7 +17,7 @@ function buildRawMessage(args: any): string {
   // No `From` header: Gmail sets the sender from the authenticated account.
   const headers = [`To: ${to}`, `Subject: ${subject}`, `Date: ${new Date().toUTCString()}`];
   if (args.cc) headers.push(`Cc: ${args.cc}`);
-  return b64url(headers.join('\r\n') + '\r\n\r\n' + body);
+  return b64(headers.join('\r\n') + '\r\n\r\n' + body);
 }
 
 // Build a reply to an existing message (In-Reply-To / References / Re: subject).
@@ -34,7 +36,7 @@ async function buildReplyRaw(token: string, args: any): Promise<string> {
   }
   const headers = [`To: ${to}`, `Subject: ${subject}`, `Date: ${new Date().toUTCString()}`];
   if (extra) headers.push(extra.trim());
-  return b64url(headers.join('\r\n') + '\r\n\r\n' + (args.body || ''));
+  return b64(headers.join('\r\n') + '\r\n\r\n' + (args.body || ''));
 }
 
 async function buildForwardRaw(token: string, args: any): Promise<string> {
@@ -45,7 +47,7 @@ async function buildForwardRaw(token: string, args: any): Promise<string> {
   const quoted = orig
     ? `\r\n\r\n----- Original Message -----\r\nFrom: ${h.from || ''}\r\nSubject: ${h.subject || ''}\r\n\r\n${orig.snippet || ''}`
     : '';
-  return b64url(headers.join('\r\n') + '\r\n\r\n' + (args.body || '') + quoted);
+  return b64(headers.join('\r\n') + '\r\n\r\n' + (args.body || '') + quoted);
 }
 
 function parseHeaders(message: any) {
