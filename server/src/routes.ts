@@ -3,9 +3,9 @@ import { db, uid } from './store';
 import { getAllApps } from './data/seed';
 import { registerMcpServer } from './lib/custom-apps';
 import { runWorkflow } from './lib/engine';
-import { hasGoogle } from './lib/google';
+import { hasGoogle, googleActive } from './lib/google';
 import { requireAuth, loginHandler, demoHandler, meHandler, findOrCreateUser, issueSessionToken, issueOneTimeCode, exchangeOneTimeCode } from './lib/auth';
-import { listProviders, isConfigured, buildAuthorizeUrl, getProfile, verifyState, consumeState, oauthDebug } from './lib/oauth';
+import { listProviders, isConfigured, buildAuthorizeUrl, getProfile, verifyState, consumeState, getOAuthState, oauthDebug } from './lib/oauth';
 
 export const router = Router();
 
@@ -37,28 +37,38 @@ router.get('/auth/oauth/:provider', (req, res) => {
   if (!isConfigured(p)) {
     return res.status(501).json({ error: `${p} is not configured (set GOOGLE/GITHUB client env vars)` });
   }
-  res.redirect(buildAuthorizeUrl(p));
+  // Capture the frontend origin so the post-consent redirect returns to the
+  // exact place that started the flow (not a hardcoded port).
+  const rawReturn = typeof req.query.returnTo === 'string' ? req.query.returnTo : '';
+  const returnTo = /^https?:\/\/[\w.:-]+$/.test(rawReturn) ? rawReturn : '';
+  console.log(`[oauth] start ${p}` + (returnTo ? ` (returnTo=${returnTo})` : ''));
+  res.redirect(buildAuthorizeUrl(p, returnTo));
 });
 
 // OAuth: provider callback (verifies state, exchanges code, redirects to web app
 // with a short-lived one-time code — never the session token).
 router.get('/auth/oauth/:provider/callback', async (req, res) => {
-  const web = process.env.APP_WEB_URL || 'http://localhost:4173';
+  const fallbackWeb = process.env.APP_WEB_URL || 'http://localhost:4173';
   try {
     const p = req.params.provider;
     const state = String(req.query.state || '');
-    if (!verifyState(state, p)) throw new Error('Invalid OAuth state (CSRF check failed)');
+    const entry = getOAuthState(state);
+    if (!entry || !verifyState(state, p)) throw new Error('Invalid OAuth state (CSRF check failed)');
+    const web = entry.returnTo || fallbackWeb;
     const code = String(req.query.code || '');
     if (!code) throw new Error('Missing authorization code');
+    console.log(`[oauth] ${p} callback: state ok, exchanging code from ${web}`);
     const profile = await getProfile(p, code);
+    console.log(`[oauth] ${p} profile ok: ${profile.email} (providerId=${profile.providerId})`);
     const user = findOrCreateUser(profile);
+    console.log(`[oauth] ${p} stored / updated google tokens for user id=${user.id} email=${user.email}`);
     const otc = issueOneTimeCode(user.id);
     consumeState(state); // handshake complete → state is now single-use/consumed
-    console.log(`[oauth] ${p} login success for ${profile.email} -> ${web}/login?code=…`);
+    console.log(`[oauth] ${p} SUCCESS -> redirect ${web}/login?code=…`);
     res.redirect(`${web}/login?code=${encodeURIComponent(otc)}`);
   } catch (e: any) {
     console.error(`[oauth] callback failed for ${req.params.provider}:`, e?.message || e);
-    res.redirect(`${web}/login?error=${encodeURIComponent(e?.message || 'oauth_failed')}`);
+    res.redirect(`${fallbackWeb}/login?error=${encodeURIComponent(e?.message || 'oauth_failed')}`);
   }
 });
 
@@ -83,7 +93,7 @@ router.get('/apps', (req, res) => {
   const user = (req as any).user;
   const apps = getAllApps().map((a) => ({
     ...a,
-    connected: a.google ? hasGoogle(user) : a.custom ? true : conns.some((c) => c.appId === a.id),
+    connected: a.google ? (hasGoogle(user) || googleActive()) : a.custom ? true : conns.some((c) => c.appId === a.id),
     connectionCount: conns.filter((c) => c.appId === a.id).length,
   }));
   res.json(apps);
@@ -91,7 +101,13 @@ router.get('/apps', (req, res) => {
 
 router.get('/google/status', (req, res) => {
   const user = (req as any).user;
-  res.json({ configured: isConfigured('google'), connected: hasGoogle(user), user: user?.email || '' });
+  const stored = db.users.all().find((u: any) => u.googleRefreshToken) as any;
+  res.json({
+    configured: isConfigured('google'),
+    connected: hasGoogle(user) || !!stored,
+    user: user?.email || stored?.email || '',
+    scopes: user?.googleScopes || stored?.googleScopes || null,
+  });
 });
 
 router.get('/apps/:id', (req, res) => {

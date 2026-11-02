@@ -29,8 +29,9 @@ loadEnv();
 const PORT = Number(process.env.PORT || 3000);
 
 function seed() {
-  if (db.apps.all().length === 0) {
-    for (const app of APPS) db.apps.insert({ ...app });
+  // Idempotent: insert each built-in app only if it isn't already present.
+  for (const app of APPS) {
+    if (!db.apps.get(app.id)) db.apps.insert({ ...app });
   }
   seedConnections();
 }

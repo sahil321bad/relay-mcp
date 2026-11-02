@@ -55,10 +55,11 @@ export interface UserRow {
   googleAccessToken?: string;
   googleRefreshToken?: string;
   googleExpiresAt?: number;
+  googleScopes?: string;
 }
 
 export function sanitizeUser(u: UserRow): UserRow {
-  const { googleAccessToken, googleRefreshToken, googleExpiresAt, ...rest } = u;
+  const { googleAccessToken, googleRefreshToken, googleExpiresAt, googleScopes, ...rest } = u;
   return rest as UserRow;
 }
 
@@ -69,6 +70,7 @@ export function findOrCreateUser(profile: Profile): UserRow {
     googlePatch.googleAccessToken = encrypt(profile.googleTokens.accessToken);
     if (profile.googleTokens.refreshToken) googlePatch.googleRefreshToken = encrypt(profile.googleTokens.refreshToken);
     googlePatch.googleExpiresAt = profile.googleTokens.expiresAt;
+    if (profile.googleTokens.scope) googlePatch.googleScopes = profile.googleTokens.scope;
   }
   if (existing) {
     if (Object.keys(googlePatch).length) db.users.update(existing.id, googlePatch);

@@ -54,7 +54,10 @@ export const api = {
   demoLogin: () =>
     req<{ token: string; user: any }>('/auth/demo', { method: 'POST' })
       .then((r) => { storeSession(r.token, r.user); return r; }),
-  oauthStart: (provider: string) => { window.location.href = `${BASE}/auth/oauth/${provider}`; },
+  oauthStart: (provider: string) => {
+    const ret = encodeURIComponent(window.location.origin);
+    window.location.href = `${BASE}/auth/oauth/${provider}?returnTo=${ret}`;
+  },
   me: () => req<{ user: any }>('/me'),
   /** Handle OAuth redirect: exchange the one-time code for a session token. */
   applyRedirectToken: async () => {

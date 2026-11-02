@@ -9,6 +9,7 @@
 // Google login additionally grants offline access to Gmail / Drive / Sheets so the
 // user's connected accounts drive the real Google integrations.
 import { randomBytes } from 'node:crypto';
+import { db } from '../store';
 
 const GOOGLE_CLIENT_ID = () => process.env.GOOGLE_CLIENT_ID || '';
 const GOOGLE_CLIENT_SECRET = () => process.env.GOOGLE_CLIENT_SECRET || '';
@@ -31,10 +32,8 @@ export interface Profile {
   email: string;
   name: string;
   avatar?: string;
-  googleTokens?: { accessToken: string; refreshToken?: string; expiresAt: number };
+  googleTokens?: { accessToken: string; refreshToken?: string; expiresAt: number; scope?: string };
 }
-
-const oauthStates = new Map<string, { provider: string; exp: number }>();
 
 export function isConfigured(provider: string): boolean {
   if (provider === 'google') return !!(GOOGLE_CLIENT_ID() && GOOGLE_CLIENT_SECRET());
@@ -74,9 +73,10 @@ export function redirectUri(provider: string): string {
   return `${BASE()}/api/auth/oauth/${provider}/callback`;
 }
 
-export function buildAuthorizeUrl(provider: string): string {
+export function buildAuthorizeUrl(provider: string, returnTo = ''): string {
   const state = randomBytes(16).toString('hex');
-  oauthStates.set(state, { provider, exp: Date.now() + 10 * 60 * 1000 });
+  // Persist so server restarts do not invalidate in-flight authorization flows.
+  db.oauthstates.insert({ id: state, provider, exp: Date.now() + 10 * 60 * 1000, returnTo });
   if (provider === 'google') {
     const q = new URLSearchParams({
       client_id: GOOGLE_CLIENT_ID(),
@@ -99,16 +99,21 @@ export function buildAuthorizeUrl(provider: string): string {
 }
 
 export function verifyState(state: string, provider: string): boolean {
-  const entry = oauthStates.get(state);
+  const entry = db.oauthstates.get(state);
   if (!entry) return false;
   return entry.provider === provider && entry.exp > Date.now();
 }
 
 export function consumeState(state: string) {
-  oauthStates.delete(state);
+  db.oauthstates.remove(state);
 }
 
-async function exchangeGoogle(code: string): Promise<{ accessToken: string; refreshToken?: string; expiresAt: number }> {
+/** Return the stored state entry without consuming it (for reading returnTo). */
+export function getOAuthState(state: string) {
+  return db.oauthstates.get(state);
+}
+
+async function exchangeGoogle(code: string): Promise<{ accessToken: string; refreshToken?: string; expiresAt: number; scope?: string }> {
   const r = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -126,6 +131,7 @@ async function exchangeGoogle(code: string): Promise<{ accessToken: string; refr
     accessToken: d.access_token,
     refreshToken: d.refresh_token || undefined,
     expiresAt: Date.now() + (d.expires_in || 3600) * 1000,
+    scope: d.scope || undefined,
   };
 }
 
@@ -158,9 +164,9 @@ async function fetchGithubProfile(accessToken: string): Promise<Profile> {
 
 export async function getProfile(provider: string, code: string): Promise<Profile> {
   if (provider === 'google') {
-    const { accessToken, refreshToken, expiresAt } = await exchangeGoogle(code);
+    const { accessToken, refreshToken, expiresAt, scope } = await exchangeGoogle(code);
     const profile = await fetchGoogleProfile(accessToken);
-    profile.googleTokens = { accessToken, refreshToken, expiresAt };
+    profile.googleTokens = { accessToken, refreshToken, expiresAt, scope };
     return profile;
   }
   const { accessToken } = await exchangeGithub(code);

@@ -93,7 +93,7 @@ export default function Apps() {
             </div>
           </div>
           {gStatus.configured && !gStatus.connected && (
-            <a className="btn btn-primary" href="/api/auth/oauth/google">Connect Google account</a>
+            <a className="btn btn-primary" href={`/api/auth/oauth/google?returnTo=${encodeURIComponent(window.location.origin)}`}>Connect Google account</a>
           )}
           {gStatus.configured && gStatus.connected && <Badge tone="green" dot>Connected</Badge>}
         </div>
@@ -160,7 +160,7 @@ export default function Apps() {
                 <p className="small muted mb16">
                   This is a real Google-powered app. Connect by signing in with your Google account.
                 </p>
-                <a className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} href="/api/auth/oauth/google">
+                <a className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} href={`/api/auth/oauth/google?returnTo=${encodeURIComponent(window.location.origin)}`}>
                   Continue with Google
                 </a>
               </div>
