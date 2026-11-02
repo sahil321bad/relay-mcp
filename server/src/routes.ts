@@ -3,7 +3,7 @@ import { db, uid } from './store';
 import { APPS } from './data/seed';
 import { runWorkflow } from './lib/engine';
 import { requireAuth, loginHandler, demoHandler, meHandler, findOrCreateUser, issueSessionToken, issueOneTimeCode, exchangeOneTimeCode } from './lib/auth';
-import { listProviders, isConfigured, buildAuthorizeUrl, getProfile, verifyState } from './lib/oauth';
+import { listProviders, isConfigured, buildAuthorizeUrl, getProfile, verifyState, consumeState } from './lib/oauth';
 
 export const router = Router();
 
@@ -42,6 +42,7 @@ router.get('/auth/oauth/:provider/callback', async (req, res) => {
     const profile = await getProfile(p, code);
     const user = findOrCreateUser(profile);
     const otc = issueOneTimeCode(user.id);
+    consumeState(state); // handshake complete → state is now single-use/consumed
     res.redirect(`${web}/login?code=${encodeURIComponent(otc)}`);
   } catch (e: any) {
     res.redirect(`${web}/login?error=${encodeURIComponent(e?.message || 'oauth_failed')}`);

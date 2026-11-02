@@ -56,8 +56,12 @@ function createState(provider: string): string {
 export function verifyState(state: string, provider: string): boolean {
   const entry = oauthStates.get(state);
   if (!entry) return false;
-  oauthStates.delete(state); // single-use
   return entry.provider === provider && entry.exp > Date.now();
+}
+
+/** Delete a state entry after the OAuth handshake completes (single-use). */
+export function consumeState(state: string) {
+  oauthStates.delete(state);
 }
 
 export function buildAuthorizeUrl(provider: string): string {
