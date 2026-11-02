@@ -1,0 +1,1 @@
+Load .env config at server startup; gitignore server/.env

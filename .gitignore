@@ -6,5 +6,6 @@ server/data/*.json
 server/data/*.db
 server/data/*.db-journal
 server/data/.token-key
+server/.env
 .env
 .DS_Store
