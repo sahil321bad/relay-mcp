@@ -34,6 +34,7 @@ export interface AppDef {
   mcp: { command: string; args: string[] };
   steps: StepDef[];
   custom?: boolean;
+  google?: boolean;
 }
 
 export const APPS: AppDef[] = [
@@ -203,6 +204,144 @@ export const APPS: AppDef[] = [
         description: 'Wait a few seconds.',
         fields: [{ name: 'seconds', label: 'Seconds', type: 'number', required: true }],
         sampleOutput: { waited: 1 },
+      },
+    ],
+  },
+  {
+    id: 'gmail',
+    name: 'Gmail',
+    tagline: 'Your real inbox',
+    description: 'Send, draft, label, archive and search real Gmail messages (requires Google login).',
+    category: 'Google',
+    icon: '✉️',
+    color: '#EA4335',
+    mcp: { command: 'node', args: [] },
+    google: true,
+    steps: [
+      {
+        id: 'gmail.new_email',
+        kind: 'trigger',
+        label: 'New Email',
+        description: 'Triggers when new email arrives matching a search query.',
+        fields: [{ name: 'query', label: 'Search query (Gmail syntax)', type: 'string', placeholder: 'in:inbox' }],
+        sampleOutput: { emails: [{ id: 'e1', from: 'alice@acme.io', subject: 'Welcome!', snippet: 'Hi' }] },
+      },
+      {
+        id: 'gmail.send_email',
+        kind: 'action',
+        label: 'Send Email',
+        description: 'Send a real email from your Gmail account.',
+        fields: [
+          { name: 'to', label: 'To', type: 'string', required: true },
+          { name: 'subject', label: 'Subject', type: 'string', required: true },
+          { name: 'body', label: 'Body', type: 'textarea' },
+          { name: 'cc', label: 'Cc', type: 'string' },
+        ],
+        sampleOutput: { ok: true, messageId: 'msg_1' },
+      },
+      {
+        id: 'gmail.create_draft',
+        kind: 'action',
+        label: 'Create Draft',
+        description: 'Create a draft email.',
+        fields: [
+          { name: 'to', label: 'To', type: 'string', required: true },
+          { name: 'subject', label: 'Subject', type: 'string', required: true },
+          { name: 'body', label: 'Body', type: 'textarea' },
+        ],
+        sampleOutput: { ok: true, draftId: 'd1' },
+      },
+      {
+        id: 'gmail.add_label',
+        kind: 'action',
+        label: 'Add Label',
+        description: 'Add a label to a message.',
+        fields: [
+          { name: 'messageId', label: 'Message ID', type: 'string', required: true, help: 'Use {{event.id}} from the New Email trigger.' },
+          { name: 'label', label: 'Label name', type: 'string', required: true },
+        ],
+        sampleOutput: { ok: true },
+      },
+      {
+        id: 'gmail.archive',
+        kind: 'action',
+        label: 'Archive Email',
+        description: 'Remove a message from the inbox.',
+        fields: [{ name: 'messageId', label: 'Message ID', type: 'string', required: true }],
+        sampleOutput: { ok: true, archived: true },
+      },
+      {
+        id: 'gmail.delete',
+        kind: 'action',
+        label: 'Delete Email',
+        description: 'Move a message to trash.',
+        fields: [{ name: 'messageId', label: 'Message ID', type: 'string', required: true }],
+        sampleOutput: { ok: true, trashed: true },
+      },
+    ],
+  },
+  {
+    id: 'drive',
+    name: 'Google Drive',
+    tagline: 'Your files',
+    description: 'List files and create folders in your real Google Drive.',
+    category: 'Google',
+    icon: '🗂️',
+    color: '#4285F4',
+    mcp: { command: 'node', args: [] },
+    google: true,
+    steps: [
+      {
+        id: 'drive.list_files',
+        kind: 'action',
+        label: 'List Files',
+        description: 'Search files in Drive.',
+        fields: [{ name: 'query', label: 'Query (Drive syntax)', type: 'string', placeholder: "name contains 'invoice'" }],
+        sampleOutput: { files: [{ id: 'f1', name: 'invoice.pdf', mimeType: 'application/pdf' }] },
+      },
+      {
+        id: 'drive.create_folder',
+        kind: 'action',
+        label: 'Create Folder',
+        description: 'Create a folder in Drive.',
+        fields: [{ name: 'name', label: 'Folder name', type: 'string', required: true }],
+        sampleOutput: { id: 'f1', name: 'New folder' },
+      },
+    ],
+  },
+  {
+    id: 'gsheets',
+    name: 'Google Sheets',
+    tagline: 'Your Excel online',
+    description: 'Read and append rows in your real Google Sheets (Excel).',
+    category: 'Google',
+    icon: '📊',
+    color: '#0F9D58',
+    mcp: { command: 'node', args: [] },
+    google: true,
+    steps: [
+      {
+        id: 'sheets.append_row',
+        kind: 'action',
+        label: 'Append Row',
+        description: 'Append a row to a spreadsheet (works for Excel-imported sheets).',
+        fields: [
+          { name: 'spreadsheetId', label: 'Spreadsheet ID', type: 'string', required: true, help: 'From the spreadsheet URL: /spreadsheets/d/<ID>/edit' },
+          { name: 'range', label: 'Range', type: 'string', placeholder: 'Sheet1!A1' },
+          { name: 'values', label: 'Values (JSON column → value)', type: 'textarea', required: true, placeholder: '{"name":"Alice","email":"a@b.io"}' },
+        ],
+        sampleOutput: { ok: true, updatedRows: 1 },
+      },
+      {
+        id: 'sheets.read_range',
+        kind: 'action',
+        label: 'Read Range',
+        description: 'Read cells from a spreadsheet.',
+        fields: [
+          { name: 'spreadsheetId', label: 'Spreadsheet ID', type: 'string', required: true },
+          { name: 'range', label: 'Range', type: 'string', placeholder: 'Sheet1!A1:C10' },
+        ],
+        sampleOutput: { values: [['a', 'b', 'c']] },
       },
     ],
   },

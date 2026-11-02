@@ -89,9 +89,33 @@ set the command/args (e.g. `npx @modelcontextprotocol/server-everything`).
 > `npm run build && npm run preview` (open http://localhost:4173). On a normal OS this workaround
 > is not needed.
 
+## Real Google integration (Gmail · Drive · Sheets)
+Connecting a real Google account makes the Gmail, Google Drive and Google Sheets tools go live.
+
+1. In Google Cloud Console create an **OAuth client ID** (Application type: *Web app*).
+2. Add the authorized redirect URI: `http://localhost:3000/api/auth/oauth/google/callback`
+   (match `APP_BASE_URL`).
+3. Enable these APIs: **Gmail API**, **Google Drive API**, **Google Sheets API**.
+4. Set environment variables, then restart the API:
+   ```bash
+   export GOOGLE_CLIENT_ID=...GOOGLE_CLIENT_SECRET=...
+   export APP_BASE_URL=http://localhost:3000
+   ```
+5. Sign in to Relay with **"Continue with Google"** — the account is connected automatically
+   and the Builder exposes real tools: `Gmail Send Email / New Email trigger / Add Label /
+   Archive / Delete`, `Drive List Files / Create Folder`, `Sheets Append Row / Read Range`.
+
+Google access & refresh tokens are **encrypted at rest** (AES-256-GCM). The key comes from
+`RELAY_TOKEN_KEY` (hex) or an auto-generated `server/data/.token-key` file.
+
+## Database
+Persistent **SQLite** (`node:sqlite`) at `server/data/relay.db`. Collections: `apps`,
+`connections`, `workflows`, `runs`, `users`, `sessions`. Data survives restarts.
+
 ## Smoke test (API running)
 ```bash
 node server/scripts/smoke.mjs   # creates a workflow and runs it through the MCP server
+node server/scripts/tgoogle.mjs # verifies Google wiring + guard (no credentials needed)
 ```
 
 ## Repo layout

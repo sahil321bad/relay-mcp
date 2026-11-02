@@ -1,62 +1,74 @@
-// Tiny file-backed JSON store. Collections live in server/data/*.json.
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+// Persistent store backed by SQLite (node:sqlite). Data survives restarts.
+// One table `collections(name, id, data)` holds every collection; the Collection
+// class exposes the same API the routes/engine use (all/get/where/insert/update/remove).
+import { DatabaseSync } from 'node:sqlite';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { mkdirSync } from 'node:fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const DATA_DIR = join(__dirname, '..', 'data');
+mkdirSync(DATA_DIR, { recursive: true });
+
+export const sqlite = new DatabaseSync(join(DATA_DIR, 'relay.db'));
+sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS collections (
+    name TEXT NOT NULL,
+    id   TEXT NOT NULL,
+    data TEXT NOT NULL,
+    PRIMARY KEY (name, id)
+  );
+`);
 
 type Row = Record<string, any> & { id: string };
 
-class Collection {
+export class Collection {
   constructor(public name: string) {}
-  private file() {
-    return join(DATA_DIR, `${this.name}.json`);
+
+  private getStmt() {
+    return sqlite.prepare('SELECT data FROM collections WHERE name = ? AND id = ?');
   }
-  private read(): Row[] {
-    try {
-      if (!existsSync(this.file())) return [];
-      return JSON.parse(readFileSync(this.file(), 'utf8'));
-    } catch {
-      return [];
-    }
+  private allStmt() {
+    return sqlite.prepare('SELECT data FROM collections WHERE name = ? ORDER BY rowid');
   }
-  private write(rows: Row[]) {
-    mkdirSync(DATA_DIR, { recursive: true });
-    writeFileSync(this.file(), JSON.stringify(rows, null, 2));
+  private insertStmt() {
+    return sqlite.prepare('INSERT INTO collections (name, id, data) VALUES (?, ?, ?)');
   }
+  private updateStmt() {
+    return sqlite.prepare('UPDATE collections SET data = ? WHERE name = ? AND id = ?');
+  }
+  private deleteStmt() {
+    return sqlite.prepare('DELETE FROM collections WHERE name = ? AND id = ?');
+  }
+
   all(): Row[] {
-    return this.read();
+    const rs = this.allStmt().all(this.name) as { data: string }[];
+    return rs.map((r) => JSON.parse(r.data) as Row);
   }
   get(id: string): Row | undefined {
-    return this.read().find((r) => r.id === id);
+    const r = this.getStmt().get(this.name, id) as { data: string } | undefined;
+    return r ? (JSON.parse(r.data) as Row) : undefined;
   }
   where(pred: (r: Row) => boolean): Row[] {
-    return this.read().filter(pred);
+    return this.all().filter(pred);
   }
   insert(row: Row, key = 'id'): Row {
-    const rows = this.read();
-    if (row.id && rows.some((r) => r[key] === row[key])) {
-      throw new Error(`Duplicate ${key}: ${row[key]}`);
+    if (row.id && this.get(row.id)) {
+      throw new Error(`Duplicate ${key}: ${row.id}`);
     }
-    rows.push(row);
-    this.write(rows);
+    this.insertStmt().run(this.name, row.id, JSON.stringify(row));
     return row;
   }
   update(id: string, patch: Partial<Row>): Row | undefined {
-    const rows = this.read();
-    const i = rows.findIndex((r) => r.id === id);
-    if (i === -1) return undefined;
-    rows[i] = { ...rows[i], ...patch, id };
-    this.write(rows);
-    return rows[i];
+    const existing = this.get(id);
+    if (!existing) return undefined;
+    const next = { ...existing, ...patch, id } as Row;
+    this.updateStmt().run(this.name, id, JSON.stringify(next));
+    return next;
   }
   remove(id: string): boolean {
-    const rows = this.read();
-    const next = rows.filter((r) => r.id !== id);
-    if (next.length === rows.length) return false;
-    this.write(next);
-    return true;
+    const res = this.deleteStmt().run(this.name, id);
+    return Number(res.changes) > 0;
   }
 }
 

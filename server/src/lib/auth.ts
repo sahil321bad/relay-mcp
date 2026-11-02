@@ -8,6 +8,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { NextFunction, Request, Response } from 'express';
 import { db, uid, DATA_DIR } from '../store';
+import { encrypt } from './crypto';
 import type { Profile } from './oauth';
 
 const TOKEN_FILE = join(DATA_DIR, 'token.json');
@@ -51,11 +52,29 @@ export interface UserRow {
   name: string;
   avatar?: string;
   createdAt: string;
+  googleAccessToken?: string;
+  googleRefreshToken?: string;
+  googleExpiresAt?: number;
+}
+
+export function sanitizeUser(u: UserRow): UserRow {
+  const { googleAccessToken, googleRefreshToken, googleExpiresAt, ...rest } = u;
+  return rest as UserRow;
 }
 
 export function findOrCreateUser(profile: Profile): UserRow {
   const existing = db.users.where((u) => u.provider === profile.provider && u.providerId === profile.providerId)[0];
-  if (existing) return existing as UserRow;
+  const googlePatch: Partial<UserRow> = {};
+  if (profile.googleTokens) {
+    googlePatch.googleAccessToken = encrypt(profile.googleTokens.accessToken);
+    if (profile.googleTokens.refreshToken) googlePatch.googleRefreshToken = encrypt(profile.googleTokens.refreshToken);
+    googlePatch.googleExpiresAt = profile.googleTokens.expiresAt;
+  }
+  if (existing) {
+    if (Object.keys(googlePatch).length) db.users.update(existing.id, googlePatch);
+    // Re-read so the returned object reflects persisted (encrypted) state.
+    return sanitizeUser((db.users.get(existing.id) as UserRow) ?? existing);
+  }
   const user: UserRow = {
     id: uid('user'),
     provider: profile.provider,
@@ -64,9 +83,10 @@ export function findOrCreateUser(profile: Profile): UserRow {
     name: profile.name,
     avatar: profile.avatar,
     createdAt: new Date().toISOString(),
+    ...googlePatch,
   };
   db.users.insert(user);
-  return user;
+  return sanitizeUser(user);
 }
 
 export function issueSessionToken(user: UserRow): string {
@@ -141,11 +161,11 @@ export function demoHandler(_req: Request, res: Response) {
     avatar: undefined,
   });
   const token = issueSessionToken(user);
-  return res.json({ token, user });
+  return res.json({ token, user: sanitizeUser(user) });
 }
 
 export function meHandler(req: Request, res: Response) {
   const user = (req as any).user;
   if (!user) return res.status(401).json({ error: 'Unauthorized' });
-  return res.json({ user });
+  return res.json({ user: sanitizeUser(user as UserRow) });
 }

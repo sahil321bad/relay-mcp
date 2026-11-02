@@ -3,54 +3,78 @@
 // Configure via env vars:
 //   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
 //   GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET
-//   APP_BASE_URL        (public base URL of this API, default http://localhost:3000)
+//   APP_BASE_URL   (public base URL of this API, default http://localhost:3000)
+//   APP_WEB_URL    (public base URL of the web app)
 //
-// When a provider's credentials are missing, that provider reports `configured:false`
-// and the app falls back to its built-in "demo" sign-in so it stays usable.
+// Google login additionally grants offline access to Gmail / Drive / Sheets so the
+// user's connected accounts drive the real Google integrations.
 import { randomBytes } from 'node:crypto';
 
-const BASE = process.env.APP_BASE_URL || 'http://localhost:3000';
+const GOOGLE_CLIENT_ID = () => process.env.GOOGLE_CLIENT_ID || '';
+const GOOGLE_CLIENT_SECRET = () => process.env.GOOGLE_CLIENT_SECRET || '';
+const GITHUB_CLIENT_ID = () => process.env.GITHUB_CLIENT_ID || '';
+const GITHUB_CLIENT_SECRET = () => process.env.GITHUB_CLIENT_SECRET || '';
+const BASE = () => process.env.APP_BASE_URL || 'http://localhost:3000';
 
-export interface ProviderConfig {
-  id: 'google' | 'github';
-  label: string;
-  icon: string;
-  configured: boolean;
+export const GOOGLE_SCOPES = [
+  'openid',
+  'email',
+  'profile',
+  'https://www.googleapis.com/auth/gmail.modify',
+  'https://www.googleapis.com/auth/drive.file',
+  'https://www.googleapis.com/auth/spreadsheets',
+].join(' ');
+
+export interface Profile {
+  provider: string;
+  providerId: string;
+  email: string;
+  name: string;
+  avatar?: string;
+  googleTokens?: { accessToken: string; refreshToken?: string; expiresAt: number };
 }
 
-function googleConfigured() {
-  return !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
-}
-function githubConfigured() {
-  return !!(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET);
+const oauthStates = new Map<string, { provider: string; exp: number }>();
+
+export function isConfigured(provider: string): boolean {
+  if (provider === 'google') return !!(GOOGLE_CLIENT_ID() && GOOGLE_CLIENT_SECRET());
+  if (provider === 'github') return !!(GITHUB_CLIENT_ID() && GITHUB_CLIENT_SECRET());
+  return false;
 }
 
-export function listProviders(): ProviderConfig[] {
+export function listProviders() {
   return [
-    { id: 'google', label: 'Continue with Google', icon: 'G', configured: googleConfigured() },
-    { id: 'github', label: 'Continue with GitHub', icon: 'GH', configured: githubConfigured() },
+    { id: 'google', label: 'Continue with Google', icon: 'G', configured: isConfigured('google') },
+    { id: 'github', label: 'Continue with GitHub', icon: 'GH', configured: isConfigured('github') },
   ];
 }
 
-function redirectUri(provider: string) {
-  return `${BASE}/api/auth/oauth/${provider}/callback`;
+export function redirectUri(provider: string): string {
+  return `${BASE()}/api/auth/oauth/${provider}/callback`;
 }
 
-export function isConfigured(provider: string): boolean {
-  return provider === 'google' ? googleConfigured() : githubConfigured();
-}
-
-// ---------------------------------------------------------------------------
-// OAuth CSRF protection: random `state` values issued per flow, verified in the
-// callback before the authorization code is exchanged.
-// ---------------------------------------------------------------------------
-const oauthStates = new Map<string, { provider: string; exp: number }>();
-const STATE_TTL_MS = 10 * 60 * 1000;
-
-function createState(provider: string): string {
-  const s = randomBytes(16).toString('hex');
-  oauthStates.set(s, { provider, exp: Date.now() + STATE_TTL_MS });
-  return s;
+export function buildAuthorizeUrl(provider: string): string {
+  const state = randomBytes(16).toString('hex');
+  oauthStates.set(state, { provider, exp: Date.now() + 10 * 60 * 1000 });
+  if (provider === 'google') {
+    const q = new URLSearchParams({
+      client_id: GOOGLE_CLIENT_ID(),
+      redirect_uri: redirectUri('google'),
+      response_type: 'code',
+      scope: GOOGLE_SCOPES,
+      access_type: 'offline',
+      prompt: 'consent',
+      state,
+    });
+    return `https://accounts.google.com/o/oauth2/v2/auth?${q}`;
+  }
+  const q = new URLSearchParams({
+    client_id: GITHUB_CLIENT_ID(),
+    redirect_uri: redirectUri('github'),
+    scope: 'read:user user:email',
+    state,
+  });
+  return `https://github.com/login/oauth/authorize?${q}`;
 }
 
 export function verifyState(state: string, provider: string): boolean {
@@ -59,106 +83,67 @@ export function verifyState(state: string, provider: string): boolean {
   return entry.provider === provider && entry.exp > Date.now();
 }
 
-/** Delete a state entry after the OAuth handshake completes (single-use). */
 export function consumeState(state: string) {
   oauthStates.delete(state);
 }
 
-export function buildAuthorizeUrl(provider: string): string {
-  const state = createState(provider);
-  if (provider === 'google') {
-    const q = new URLSearchParams({
-      client_id: process.env.GOOGLE_CLIENT_ID!,
-      redirect_uri: redirectUri('google'),
-      response_type: 'code',
-      scope: 'openid email profile',
-      access_type: 'offline',
-      prompt: 'select_account',
-      state,
-    });
-    return `https://accounts.google.com/o/oauth2/v2/auth?${q}`;
-  }
-  const q = new URLSearchParams({
-    client_id: process.env.GITHUB_CLIENT_ID!,
-    redirect_uri: redirectUri('github'),
-    scope: 'read:user user:email',
-    state,
-  });
-  return `https://github.com/login/oauth/authorize?${q}`;
-}
-
-async function exchangeCode(provider: string, code: string): Promise<{ accessToken: string }> {
-  if (provider === 'google') {
-    const res = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: process.env.GOOGLE_CLIENT_ID!,
-        client_secret: process.env.GOOGLE_CLIENT_SECRET!,
-        redirect_uri: redirectUri('google'),
-        grant_type: 'authorization_code',
-        code,
-      }),
-    });
-    const data = (await res.json()) as any;
-    if (!res.ok || !data.access_token) throw new Error(data.error_description || 'Google token exchange failed');
-    return { accessToken: data.access_token };
-  }
-  const res = await fetch('https://github.com/login/oauth/access_token', {
+async function exchangeGoogle(code: string): Promise<{ accessToken: string; refreshToken?: string; expiresAt: number }> {
+  const r = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({
-      client_id: process.env.GITHUB_CLIENT_ID!,
-      client_secret: process.env.GITHUB_CLIENT_SECRET!,
-      redirect_uri: redirectUri('github'),
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
       code,
+      client_id: GOOGLE_CLIENT_ID(),
+      client_secret: GOOGLE_CLIENT_SECRET(),
+      redirect_uri: redirectUri('google'),
+      grant_type: 'authorization_code',
     }),
   });
-  const data = (await res.json()) as any;
-  if (!res.ok || !data.access_token) throw new Error(data.error_description || 'GitHub token exchange failed');
-  return { accessToken: data.access_token };
-}
-
-export interface Profile {
-  provider: string;
-  providerId: string;
-  email: string;
-  name: string;
-  avatar?: string;
-}
-
-async function fetchProfile(provider: string, accessToken: string): Promise<Profile> {
-  if (provider === 'google') {
-    const res = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    const data = (await res.json()) as any;
-    if (!res.ok) throw new Error('Failed to fetch Google profile');
-    return {
-      provider: 'google',
-      providerId: String(data.id),
-      email: data.email || '',
-      name: data.name || data.email || 'Google user',
-      avatar: data.picture,
-    };
-  }
-  const res = await fetch('https://api.github.com/user', {
-    headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/vnd.github+json' },
-  });
-  const data = (await res.json()) as any;
-  if (!res.ok) throw new Error('Failed to fetch GitHub profile');
+  const d = await r.json();
+  if (!r.ok || !d.access_token) throw new Error(d.error_description || 'Google token exchange failed');
   return {
-    provider: 'github',
-    providerId: String(data.id),
-    email: data.email || '',
-    name: data.name || data.login || 'GitHub user',
-    avatar: data.avatar_url,
+    accessToken: d.access_token,
+    refreshToken: d.refresh_token || undefined,
+    expiresAt: Date.now() + (d.expires_in || 3600) * 1000,
   };
 }
 
+async function exchangeGithub(code: string): Promise<{ accessToken: string }> {
+  const r = await fetch('https://github.com/login/oauth/access_token', {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_id: GITHUB_CLIENT_ID(), client_secret: GITHUB_CLIENT_SECRET(), code }),
+  });
+  const d = await r.json();
+  if (!r.ok || !d.access_token) throw new Error(d.error_description || 'GitHub token exchange failed');
+  return { accessToken: d.access_token };
+}
+
+async function fetchGoogleProfile(accessToken: string): Promise<Profile> {
+  const r = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const d = await r.json();
+  if (!r.ok) throw new Error('Failed to fetch Google profile');
+  return { provider: 'google', providerId: String(d.sub), email: d.email || '', name: d.name || 'Google user', avatar: d.picture };
+}
+
+async function fetchGithubProfile(accessToken: string): Promise<Profile> {
+  const r = await fetch('https://api.github.com/user', { headers: { Authorization: `Bearer ${accessToken}` } });
+  const d = await r.json();
+  if (!r.ok) throw new Error('Failed to fetch GitHub profile');
+  return { provider: 'github', providerId: String(d.id), email: d.email || '', name: d.name || d.login || 'GitHub user', avatar: d.avatar_url };
+}
+
 export async function getProfile(provider: string, code: string): Promise<Profile> {
-  const { accessToken } = await exchangeCode(provider, code);
-  return fetchProfile(provider, accessToken);
+  if (provider === 'google') {
+    const { accessToken, refreshToken, expiresAt } = await exchangeGoogle(code);
+    const profile = await fetchGoogleProfile(accessToken);
+    profile.googleTokens = { accessToken, refreshToken, expiresAt };
+    return profile;
+  }
+  const { accessToken } = await exchangeGithub(code);
+  return fetchGithubProfile(accessToken);
 }
 
 export function newSessionToken(): string {

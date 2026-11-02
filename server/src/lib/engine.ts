@@ -5,6 +5,8 @@
 import { db, uid } from '../store';
 import { mcp } from './mcp-client';
 import { getAllApps } from '../data/seed';
+import { googleTools } from './google-tools';
+import type { UserRow } from './auth';
 
 export interface WorkflowInput {
   id?: string;
@@ -78,7 +80,14 @@ function extractEvents(result: any): any[] {
   return [result || {}];
 }
 
-export async function runWorkflow(workflow: WorkflowInput, opts: { forceSample?: boolean } = {}): Promise<any> {
+async function runGoogle(user: UserRow | null | undefined, toolId: string, args: any) {
+  if (!user) throw new Error('Google tools require a signed-in account (log in with Google).');
+  const fn = googleTools[toolId];
+  if (!fn) throw new Error(`Unknown Google tool: ${toolId}`);
+  return fn(user, args);
+}
+
+export async function runWorkflow(workflow: WorkflowInput, opts: { forceSample?: boolean } = {}, user?: UserRow | null): Promise<any> {
   const run: any = {
     id: uid('run'),
     workflowId: workflow.id,
@@ -103,7 +112,9 @@ export async function runWorkflow(workflow: WorkflowInput, opts: { forceSample?:
     log('info', `Polling trigger “${triggerStep.label}” via MCP tool ${workflow.trigger.id}`);
 
     const triggerArgs = coerceSteps(workflow.trigger.config, triggerStep.fields);
-    const triggerResult = await mcp.callTool(triggerApp!.mcp, workflow.trigger.id, triggerArgs);
+    const triggerResult = triggerApp?.google
+      ? await runGoogle(user, workflow.trigger.id, triggerArgs)
+      : await mcp.callTool(triggerApp!.mcp, workflow.trigger.id, triggerArgs);
     let events = extractEvents(triggerResult);
 
     if (opts.forceSample || events.length === 0) {
@@ -129,7 +140,9 @@ export async function runWorkflow(workflow: WorkflowInput, opts: { forceSample?:
         stepLogs.push({ stepId: action.id, appId: action.appId, label, status: 'running', output: null });
         log('info', `  → ${label} (${action.id})`);
         const args = resolveValue(coerceSteps(action.config, stepDef.fields), ctx);
-        const output = await mcp.callTool(app!.mcp, action.id, args);
+        const output = app?.google
+          ? await runGoogle(user, action.id, args)
+          : await mcp.callTool(app!.mcp, action.id, args);
         ctx.actions.push({ output });
         stepLogs[a].status = 'success';
         stepLogs[a].output = output;

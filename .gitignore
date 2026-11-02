@@ -3,5 +3,8 @@ dist/
 *.log
 server/data/*.json
 !server/data/seed.json
+server/data/*.db
+server/data/*.db-journal
+server/data/.token-key
 .env
 .DS_Store

@@ -17,12 +17,18 @@ export default function Apps() {
   const [mcpArgs, setMcpArgs] = useState('');
   const [mcpError, setMcpError] = useState<string | null>(null);
 
+  const [gStatus, setGStatus] = useState<{ configured: boolean; connected: boolean; user: string }>({ configured: false, connected: false, user: '' });
+
   const refresh = useCallback(async () => {
     const [a, c] = await Promise.all([api.apps(), api.connections()]);
     setApps(a); setConnections(c); setLoading(false);
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  useEffect(() => {
+    api.googleStatus().then(setGStatus).catch(() => {});
+  }, []);
 
   const openConnect = (app: AppDef) => { setConnectApp(app); setName(''); };
 
@@ -68,6 +74,28 @@ export default function Apps() {
         </div>
         <div className="row">
           <button className="btn" onClick={() => { setMcpOpen(true); setMcpError(null); }}>+ Add MCP server</button>
+        </div>
+      </div>
+
+      <div className="card mb16" style={{ borderColor: 'rgba(66,133,244,.35)', background: 'linear-gradient(135deg, rgba(66,133,244,.10), rgba(234,67,53,.06))' }}>
+        <div className="row row-between">
+          <div className="row" style={{ gap: 12 }}>
+            <span style={{ fontSize: 26 }}>🔐</span>
+            <div>
+              <div style={{ fontWeight: 700 }}>Google integration (Gmail · Drive · Sheets)</div>
+              <div className="small muted">
+                {gStatus.configured
+                  ? gStatus.connected
+                    ? `Connected as ${gStatus.user} — real Gmail/Drive/Sheets tools are live.`
+                    : 'Configured. Connect your Google account to enable real tools.'
+                  : 'Set GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET to enable real Gmail, Drive and Sheets.'}
+              </div>
+            </div>
+          </div>
+          {gStatus.configured && !gStatus.connected && (
+            <a className="btn btn-primary" href="/api/auth/oauth/google">Connect Google account</a>
+          )}
+          {gStatus.configured && gStatus.connected && <Badge tone="green" dot>Connected</Badge>}
         </div>
       </div>
 

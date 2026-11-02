@@ -87,6 +87,7 @@ export const api = {
   addMcpServer: (body: { name: string; command: string; args: string[] }) =>
     req<AppDef>('/mcp-servers', { method: 'POST', body: JSON.stringify(body) }),
   deleteMcpServer: (id: string) => req<{ ok: boolean }>(`/mcp-servers/${id}`, { method: 'DELETE' }),
+  googleStatus: () => req<{ configured: boolean; connected: boolean; user: string }>('/google/status'),
 
   connections: () => req<Connection[]>('/connections'),
   createConnection: (body: { appId: string; name?: string; config?: any }) =>

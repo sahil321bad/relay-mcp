@@ -3,6 +3,7 @@ import { db, uid } from './store';
 import { getAllApps } from './data/seed';
 import { registerMcpServer } from './lib/custom-apps';
 import { runWorkflow } from './lib/engine';
+import { hasGoogle } from './lib/google';
 import { requireAuth, loginHandler, demoHandler, meHandler, findOrCreateUser, issueSessionToken, issueOneTimeCode, exchangeOneTimeCode } from './lib/auth';
 import { listProviders, isConfigured, buildAuthorizeUrl, getProfile, verifyState, consumeState } from './lib/oauth';
 
@@ -66,14 +67,20 @@ router.get('/me', meHandler);
 // ---------------------------------------------------------------------------
 // Apps
 // ---------------------------------------------------------------------------
-router.get('/apps', (_req, res) => {
+router.get('/apps', (req, res) => {
   const conns = db.connections.all();
+  const user = (req as any).user;
   const apps = getAllApps().map((a) => ({
     ...a,
-    connected: a.custom ? true : conns.some((c) => c.appId === a.id),
+    connected: a.google ? hasGoogle(user) : a.custom ? true : conns.some((c) => c.appId === a.id),
     connectionCount: conns.filter((c) => c.appId === a.id).length,
   }));
   res.json(apps);
+});
+
+router.get('/google/status', (req, res) => {
+  const user = (req as any).user;
+  res.json({ configured: isConfigured('google'), connected: hasGoogle(user), user: user?.email || '' });
 });
 
 router.get('/apps/:id', (req, res) => {
@@ -196,7 +203,7 @@ router.delete('/workflows/:id', (req, res) => {
 router.post('/workflows/:id/test', async (req, res) => {
   const wf = db.workflows.get(req.params.id);
   if (!wf) return res.status(404).json({ error: 'Not found' });
-  const run = await runWorkflow(wf as any, { forceSample: !!(req.body && req.body.forceSample) });
+  const run = await runWorkflow(wf as any, { forceSample: !!(req.body && req.body.forceSample) }, (req as any).user);
   res.status(201).json(run);
 });
 
