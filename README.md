@@ -72,6 +72,9 @@ Security notes (implemented):
   with a short-lived, single-use one-time code, which the frontend exchanges via
   `POST /api/auth/exchange` for the real token.
 - The API token in the MCP Server → Settings page can be rotated/revoked (UI).
+- Secret scanning: `npm run scan` checks all tracked files for credential patterns.
+  Enable the pre-commit hook with `git config core.hooksPath .githooks` to run it
+  automatically before every commit.
 
 The demo MCP server is bundled and spawns automatically — no external MCP servers needed.
 To point a connection at any real MCP server (stdio), open the app's connection settings and
