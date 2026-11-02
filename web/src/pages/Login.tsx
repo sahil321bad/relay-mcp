@@ -1,24 +1,42 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 
+interface Provider { id: string; label: string; icon: string; configured: boolean }
+
 export default function Login() {
   const nav = useNavigate();
-  const [password, setPassword] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [providers, setProviders] = useState<Provider[]>([]);
+  const [demo, setDemo] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const enter = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
+  useEffect(() => {
+    (async () => {
+      const res = await api.applyRedirectToken();
+      if (res.token) return;
+      try {
+        const r = await api.providers();
+        setProviders(r.providers);
+        setDemo(r.demo);
+        if (res.error) setError('OAuth login was not completed');
+      } catch { /* ignore */ }
+    })();
+  }, []);
+
+  const oauth = (p: string) => {
+    setBusy(p);
+    api.oauthStart(p);
+  };
+
+  const demoLogin = async () => {
+    setBusy('demo');
     try {
-      await api.login(password);
+      await api.demoLogin();
       nav('/home');
-    } catch (err: any) {
-      setError(err?.message || 'Login failed');
-    } finally {
-      setBusy(false);
+    } catch (e: any) {
+      setError(e?.message || 'Demo login failed');
+      setBusy(null);
     }
   };
 
@@ -36,28 +54,34 @@ export default function Login() {
           Connect everything.<br /><span>Automate anything.</span>
         </h1>
         <p className="login-sub">
-          Build workflows that trigger on events and run actions across MCP-powered apps —
-          email, Slack, spreadsheets, APIs and more.
+          Sign in to build workflows across MCP-powered apps — email, Slack, spreadsheets, APIs and more.
         </p>
 
-        <form onSubmit={enter} className="mt24" style={{ textAlign: 'left' }}>
-          <div className="field">
-            <label className="field-label">Workspace password</label>
-            <input
-              className="input"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="demo: relay-demo"
-              autoFocus
-            />
-            <span className="field-help">Demo workspace password is <b>relay-demo</b> (override via RELAY_PASSWORD).</span>
-          </div>
-          {error && <div className="small" style={{ color: 'var(--red)', marginBottom: 10 }}>{error}</div>}
-          <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '13px' }} disabled={busy}>
-            {busy ? 'Signing in…' : 'Sign in →'}
-          </button>
-        </form>
+        {error && <div className="small" style={{ color: 'var(--red)', marginTop: 14 }}>{error}</div>}
+
+        <div className="mt24" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {providers.map((p) => (
+            <button key={p.id} className="btn oauth-btn" disabled={!p.configured || !!busy} onClick={() => oauth(p.id)}>
+              <span className="oauth-ico">{p.icon}</span>
+              {p.label}
+              {!p.configured && <span className="small muted" style={{ marginLeft: 'auto' }}>(not configured)</span>}
+            </button>
+          ))}
+          {demo && (
+            <button className="btn oauth-btn" disabled={!!busy} onClick={demoLogin}>
+              <span className="oauth-ico">🪄</span> Continue as demo user
+            </button>
+          )}
+        </div>
+
+        <div className="divider mt24">or</div>
+        <button className="btn btn-ghost btn-sm" style={{ width: '100%', justifyContent: 'center', marginTop: 12 }}
+          onClick={() => nav('/login')} disabled>
+          Use workspace token (API)
+        </button>
+        <p className="small muted" style={{ marginTop: 12 }}>
+          Google/GitHub login appears only when credentials are configured (GOOGLE_CLIENT_ID / GITHUB_CLIENT_ID). The demo user always works.
+        </p>
       </div>
     </div>
   );

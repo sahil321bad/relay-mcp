@@ -65,6 +65,8 @@ export const db = {
   connections: new Collection('connections'),
   workflows: new Collection('workflows'),
   runs: new Collection('runs'),
+  users: new Collection('users'),
+  sessions: new Collection('sessions'),
 };
 
 export const uid = (prefix = 'id') => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;

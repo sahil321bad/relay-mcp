@@ -41,13 +41,35 @@ npm run dev
 
 ## Authentication
 
-Every `/api` route except `/health` and `/auth/login` requires a **Bearer token**.
+Every `/api` route except `/health` and `/auth/*` requires a **Bearer token**
+(either the workspace token or a user session token).
 
-- POST `POST /api/auth/login` with `{"password": "<password>"}` → `{"token": "…"}`.
-- Send `Authorization: Bearer <token>` on all other requests.
-- Demo password: `relay-demo` (override via `RELAY_PASSWORD`).
-- The token is generated on first run and persisted to `server/data/token.json`
-  (or fixed via `RELAY_API_TOKEN`).
+- Sign in via the web UI with **Google or GitHub** (OAuth) or the **demo user**.
+- Workspace (headless) credentials: `POST /api/auth/login` with
+  `{"password": "<password>"}` → `{"token": "…"}`; default password `relay-demo`
+  (override via `RELAY_PASSWORD`). The workspace token is generated on first run,
+  persisted to `server/data/token.json` (or fixed via `RELAY_API_TOKEN`).
+
+### Google / GitHub OAuth
+Set these env vars on the API process:
+
+```
+GOOGLE_CLIENT_ID=...        GOOGLE_CLIENT_SECRET=...
+GITHUB_CLIENT_ID=...        GITHUB_CLIENT_SECRET=...
+APP_BASE_URL=http://localhost:3000      # public base of the API
+APP_WEB_URL=http://localhost:4173       # where the browser is redirected after login
+```
+
+Redirect URIs to register with each provider:
+- Google: `http://localhost:3000/api/auth/oauth/google/callback`
+- GitHub: `http://localhost:3000/api/auth/oauth/github/callback`
+
+Security notes (implemented):
+- OAuth state (`state`) is generated per flow and verified in the callback (CSRF protection).
+- The session token is never placed in the URL. After OAuth the server redirects
+  with a short-lived, single-use one-time code, which the frontend exchanges via
+  `POST /api/auth/exchange` for the real token.
+- The API token in the MCP Server → Settings page can be rotated/revoked (UI).
 
 The demo MCP server is bundled and spawns automatically — no external MCP servers needed.
 To point a connection at any real MCP server (stdio), open the app's connection settings and

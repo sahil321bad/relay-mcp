@@ -2,7 +2,8 @@ import { Router } from 'express';
 import { db, uid } from './store';
 import { APPS } from './data/seed';
 import { runWorkflow } from './lib/engine';
-import { requireAuth, loginHandler } from './lib/auth';
+import { requireAuth, loginHandler, demoHandler, meHandler, findOrCreateUser, issueSessionToken, issueOneTimeCode, exchangeOneTimeCode } from './lib/auth';
+import { listProviders, isConfigured, buildAuthorizeUrl, getProfile, verifyState } from './lib/oauth';
 
 export const router = Router();
 
@@ -10,9 +11,55 @@ router.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'relay-api', time: new Date().toISOString() });
 });
 
-// Everything below this line requires a Bearer token (except /auth/login).
+// ---------------- Public auth (no token required) ----------------
+router.get('/auth/providers', (_req, res) => {
+  res.json({ providers: listProviders(), demo: true });
+});
+
 router.post('/auth/login', loginHandler);
+router.post('/auth/demo', demoHandler);
+
+// OAuth: initiate provider login
+router.get('/auth/oauth/:provider', (req, res) => {
+  const p = req.params.provider;
+  if (p !== 'google' && p !== 'github') return res.status(400).json({ error: 'Unknown provider' });
+  if (!isConfigured(p)) {
+    return res.status(501).json({ error: `${p} is not configured (set GOOGLE/GITHUB client env vars)` });
+  }
+  res.redirect(buildAuthorizeUrl(p));
+});
+
+// OAuth: provider callback (verifies state, exchanges code, redirects to web app
+// with a short-lived one-time code — never the session token).
+router.get('/auth/oauth/:provider/callback', async (req, res) => {
+  const web = process.env.APP_WEB_URL || 'http://localhost:4173';
+  try {
+    const p = req.params.provider;
+    const state = String(req.query.state || '');
+    if (!verifyState(state, p)) throw new Error('Invalid OAuth state (CSRF check failed)');
+    const code = String(req.query.code || '');
+    if (!code) throw new Error('Missing authorization code');
+    const profile = await getProfile(p, code);
+    const user = findOrCreateUser(profile);
+    const otc = issueOneTimeCode(user.id);
+    res.redirect(`${web}/login?code=${encodeURIComponent(otc)}`);
+  } catch (e: any) {
+    res.redirect(`${web}/login?error=${encodeURIComponent(e?.message || 'oauth_failed')}`);
+  }
+});
+
+// Exchange a one-time code (from the login redirect) for a session token.
+router.post('/auth/exchange', (req, res) => {
+  const code = String(req.body?.code ?? '');
+  const user = exchangeOneTimeCode(code);
+  if (!user) return res.status(401).json({ error: 'Invalid or expired code' });
+  const token = issueSessionToken(user);
+  return res.json({ token, user });
+});
+
+// ---------------- Everything below requires auth ----------------
 router.use(requireAuth);
+router.get('/me', meHandler);
 
 // ---------------------------------------------------------------------------
 // Apps

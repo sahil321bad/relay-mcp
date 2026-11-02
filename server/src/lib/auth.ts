@@ -1,17 +1,17 @@
-// Minimal authentication for the workspace API.
+// Authentication for the Relay API.
 //
-// The workspace has a single shared Bearer token. On first run it is generated
-// and persisted to `data/token.json` (or you can fix it via RELAY_API_TOKEN).
-// Clients obtain it by POSTing the workspace password to /api/auth/login.
+// Two credential types are accepted on /api routes (except /health & /auth/*):
+//   1. The workspace Bearer token (for headless/API access).
+//   2. A user session token obtained via /api/auth/login, /api/auth/demo or OAuth.
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { NextFunction, Request, Response } from 'express';
-import { DATA_DIR } from '../store';
+import { db, uid, DATA_DIR } from '../store';
+import type { Profile } from './oauth';
 
 const TOKEN_FILE = join(DATA_DIR, 'token.json');
 
-// Password used to "log in" and receive the token (override via RELAY_PASSWORD).
 export const RELAY_PASSWORD = process.env.RELAY_PASSWORD || 'relay-demo';
 
 export function getWorkspaceToken(): string {
@@ -23,13 +23,13 @@ export function getWorkspaceToken(): string {
       if (parsed?.token) return parsed.token;
     }
   } catch {
-    /* fall through to regenerate */
+    /* regenerate below */
   }
   const token = randomBytes(24).toString('hex');
   try {
     writeFileSync(TOKEN_FILE, JSON.stringify({ token }, null, 2));
   } catch {
-    /* non-fatal: token still valid for this process */
+    /* non-fatal */
   }
   return token;
 }
@@ -37,18 +37,90 @@ export function getWorkspaceToken(): string {
 function safeEqual(a: string, b: string): boolean {
   const ba = Buffer.from(a);
   const bb = Buffer.from(b);
-  if (ba.length !== bb.length) return false;
-  return timingSafeEqual(ba, bb);
+  return ba.length === bb.length && timingSafeEqual(ba, bb);
 }
 
-/** Bearer-token gate. Mount AFTER /health and /auth/login. */
+// ---------------------------------------------------------------------------
+// Users & sessions
+// ---------------------------------------------------------------------------
+export interface UserRow {
+  id: string;
+  provider: string;
+  providerId: string;
+  email: string;
+  name: string;
+  avatar?: string;
+  createdAt: string;
+}
+
+export function findOrCreateUser(profile: Profile): UserRow {
+  const existing = db.users.where((u) => u.provider === profile.provider && u.providerId === profile.providerId)[0];
+  if (existing) return existing as UserRow;
+  const user: UserRow = {
+    id: uid('user'),
+    provider: profile.provider,
+    providerId: profile.providerId,
+    email: profile.email,
+    name: profile.name,
+    avatar: profile.avatar,
+    createdAt: new Date().toISOString(),
+  };
+  db.users.insert(user);
+  return user;
+}
+
+export function issueSessionToken(user: UserRow): string {
+  const token = randomBytes(24).toString('hex');
+  db.sessions.insert({ id: `sess_${token}`, token, userId: user.id, createdAt: new Date().toISOString() });
+  return token;
+}
+
+// ---------------------------------------------------------------------------
+// One-time authorization codes: used to hand a session to the browser via a
+// redirect without ever putting the session token in the URL. The code is
+// short-lived and single-use; the browser POSTs it back for the real token.
+// ---------------------------------------------------------------------------
+const oneTimeCodes = new Map<string, { userId: string; exp: number }>();
+const CODE_TTL_MS = 60 * 1000;
+
+export function issueOneTimeCode(userId: string): string {
+  const code = randomBytes(18).toString('base64url');
+  oneTimeCodes.set(code, { userId, exp: Date.now() + CODE_TTL_MS });
+  return code;
+}
+
+export function exchangeOneTimeCode(code: string): UserRow | null {
+  const entry = oneTimeCodes.get(code);
+  if (!entry) return null;
+  oneTimeCodes.delete(code); // single-use
+  if (entry.exp < Date.now()) return null;
+  const user = db.users.get(entry.userId);
+  return user ? (user as UserRow) : null;
+}
+
+export function userFromToken(token: string): UserRow | null {
+  const sess = db.sessions.where((s) => s.token === token)[0];
+  if (!sess) return null;
+  const user = db.users.get(sess.userId);
+  return user ? (user as UserRow) : null;
+}
+
+// ---------------------------------------------------------------------------
+// Middleware / handlers
+// ---------------------------------------------------------------------------
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
-  const header = req.headers.authorization || '';
-  const token = header.replace(/^Bearer\s+/i, '').trim();
-  if (token && safeEqual(token, getWorkspaceToken())) {
+  const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+  if (!token) return res.status(401).json({ error: 'Unauthorized: a valid Bearer token is required' });
+
+  if (safeEqual(token, getWorkspaceToken())) {
+    (req as any).user = { id: 'workspace', provider: 'workspace', name: 'Workspace', email: '' };
     return next();
   }
-  return res.status(401).json({ error: 'Unauthorized: a valid Bearer token is required' });
+  const user = userFromToken(token);
+  if (!user) return res.status(401).json({ error: 'Unauthorized: invalid session' });
+  (req as any).user = user;
+  (req as any).sessionToken = token;
+  return next();
 }
 
 export function loginHandler(req: Request, res: Response) {
@@ -56,5 +128,24 @@ export function loginHandler(req: Request, res: Response) {
   if (!safeEqual(password, RELAY_PASSWORD)) {
     return res.status(401).json({ error: 'Invalid password' });
   }
-  return res.json({ token: getWorkspaceToken(), workspace: 'demo' });
+  // Workspace login → return the workspace token (headless/client use).
+  return res.json({ token: getWorkspaceToken(), user: { id: 'workspace', name: 'Workspace' } });
+}
+
+export function demoHandler(_req: Request, res: Response) {
+  const user = findOrCreateUser({
+    provider: 'demo',
+    providerId: 'demo',
+    email: 'demo@relay.local',
+    name: 'Demo User',
+    avatar: undefined,
+  });
+  const token = issueSessionToken(user);
+  return res.json({ token, user });
+}
+
+export function meHandler(req: Request, res: Response) {
+  const user = (req as any).user;
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  return res.json({ user });
 }

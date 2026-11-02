@@ -1,28 +1,60 @@
-import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom';
+import { useMemo, useState } from 'react';
+import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { cachedUser, logout } from './api';
 import { Badge } from './components/ui';
 import Login from './pages/Login';
 import Home from './pages/Home';
+import Automations from './pages/Automations';
+import Folders from './pages/Folders';
+import Favorites from './pages/Favorites';
+import Templates from './pages/Templates';
 import Apps from './pages/Apps';
-import Workflows from './pages/Workflows';
-import Runs from './pages/Runs';
+import McpServers from './pages/McpServers';
+import ZapHistory from './pages/ZapHistory';
 import Builder from './pages/Builder';
 
 const hasSession = () => !!localStorage.getItem('relay_session');
 
 const NAV = [
   { to: '/home', label: 'Home', icon: '🏠' },
-  { to: '/apps', label: 'Apps', icon: '🧩' },
-  { to: '/workflows', label: 'Workflows', icon: '⚡' },
-  { to: '/builder', label: 'Builder', icon: '🧱' },
-  { to: '/runs', label: 'Runs', icon: '📜' },
+  { to: '/automations', label: 'Automations', icon: '⚡' },
+  { to: '/folders', label: 'Folders', icon: '📁' },
+  { to: '/favorites', label: 'Favorites', icon: '⭐' },
+  { to: '/templates', label: 'Templates', icon: '🧩' },
+];
+const INTEGRATIONS = [
+  { to: '/apps', label: 'App connections', icon: '🔌' },
+  { to: '/mcp', label: 'MCP servers', icon: '🛰️', new: true },
+  { to: '/history', label: 'Zap history', icon: '🕘' },
 ];
 
-function TitleFor(path: string) {
-  const map: Record<string, string> = {
-    '/home': 'Home', '/apps': 'Apps', '/workflows': 'Workflows',
-    '/builder': 'Workflow builder', '/runs': 'Runs & logs',
-  };
-  return map[path] ?? 'Relay';
+function Topbar() {
+  const nav = useNavigate();
+  const user = useMemo(() => cachedUser(), []);
+  const [q, setQ] = useState('');
+  const initials = (user?.name || 'D').replace(/[^A-Za-z]/g, '').slice(0, 2).toUpperCase() || 'D';
+
+  return (
+    <div className="topbar">
+      <div className="topbar-search">
+        <span className="search-ico">⌕</span>
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && q.trim()) nav(`/automations?q=${encodeURIComponent(q.trim())}`); }}
+          placeholder="Search assets, apps, templates, and more"
+        />
+        <span className="search-kbd">Ctrl K</span>
+      </div>
+      <div className="topbar-spacer" />
+      <Link to="/apps" className="btn btn-ghost btn-sm">Explore apps</Link>
+      <Link to="/templates" className="btn btn-ghost btn-sm">Templates</Link>
+      <span className="btn btn-sm upgrade-pill">Upgrade</span>
+      <div className="avatar" title={user?.name || 'Account'} onClick={() => { if (confirm('Sign out?')) logout(); }}>
+        {initials}
+      </div>
+    </div>
+  );
 }
 
 function Layout({ children }: { children: React.ReactNode }) {
@@ -37,19 +69,34 @@ function Layout({ children }: { children: React.ReactNode }) {
             <div className="brand-sub">automation · MCP</div>
           </div>
         </div>
+
+        <Link to="/builder" className="btn btn-primary create-btn">+ Create</Link>
+
+        <div className="nav-group-label">MENU</div>
         {NAV.map((n) => (
           <NavLink key={n.to} to={n.to} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
             <span className="nav-ico">{n.icon}</span> {n.label}
           </NavLink>
         ))}
-        <div className="sidebar-foot">Demo workspace · local MCP servers</div>
+
+        <div className="nav-group-label">INTEGRATIONS</div>
+        {INTEGRATIONS.map((n) => (
+          <NavLink key={n.to} to={n.to} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+            <span className="nav-ico">{n.icon}</span> {n.label}
+            {n.new && <Badge tone="blue">new</Badge>}
+          </NavLink>
+        ))}
+
+        <div className="sidebar-foot">
+          <div className="plan-meter">
+            <div className="plan-bar"><div className="plan-fill" style={{ width: '7%' }} /></div>
+            <div className="small muted mono">Plan tasks 70 / 1,000</div>
+          </div>
+          <button className="btn btn-sm" style={{ width: '100%', justifyContent: 'center', marginTop: 8 }}>Manage plan</button>
+        </div>
       </aside>
       <div className="main">
-        <div className="topbar">
-          <div className="topbar-title">{TitleFor(loc.pathname)}</div>
-          <div className="topbar-spacer" />
-          <Badge tone="green" dot>connected</Badge>
-        </div>
+        <Topbar />
         <div className="content">{children}</div>
       </div>
     </div>
@@ -65,9 +112,13 @@ export default function App() {
     <Routes>
       <Route path="/login" element={hasSession() ? <Navigate to="/home" replace /> : <Login />} />
       <Route path="/home" element={<Guard><Home /></Guard>} />
+      <Route path="/automations" element={<Guard><Automations /></Guard>} />
+      <Route path="/folders" element={<Guard><Folders /></Guard>} />
+      <Route path="/favorites" element={<Guard><Favorites /></Guard>} />
+      <Route path="/templates" element={<Guard><Templates /></Guard>} />
       <Route path="/apps" element={<Guard><Apps /></Guard>} />
-      <Route path="/workflows" element={<Guard><Workflows /></Guard>} />
-      <Route path="/runs" element={<Guard><Runs /></Guard>} />
+      <Route path="/mcp" element={<Guard><McpServers /></Guard>} />
+      <Route path="/history" element={<Guard><ZapHistory /></Guard>} />
       <Route path="/builder" element={<Guard><Builder /></Guard>} />
       <Route path="/" element={<Navigate to={hasSession() ? '/home' : '/login'} replace />} />
       <Route path="*" element={<Navigate to={hasSession() ? '/home' : '/login'} replace />} />
