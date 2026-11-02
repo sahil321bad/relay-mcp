@@ -1,0 +1,9 @@
+#!/bin/sh
+# Pre-commit guard: block committing real .env files (possible secrets).
+# Placeholder files (.env.example) are allowed.
+# Enable with:  git config core.hooksPath .githooks
+if git diff --cached --name-only | grep -E '(^|/)\.env$'; then
+  echo "error: refusing to commit a .env file (potential secrets). Use .env.example instead." >&2
+  exit 1
+fi
+exit 0

@@ -96,10 +96,11 @@ Connecting a real Google account makes the Gmail, Google Drive and Google Sheets
 2. Add the authorized redirect URI: `http://localhost:3000/api/auth/oauth/google/callback`
    (match `APP_BASE_URL`).
 3. Enable these APIs: **Gmail API**, **Google Drive API**, **Google Sheets API**.
-4. Set environment variables, then restart the API:
+4. Provide the credentials **via environment / a local .env** — never commit them:
    ```bash
-   export GOOGLE_CLIENT_ID=...GOOGLE_CLIENT_SECRET=...
-   export APP_BASE_URL=http://localhost:3000
+   cp server/.env.example server/.env   # edit with your real values
+   # or export them in your shell/process manager.
+   # `server/.env` is gitignored and blocked by a pre-commit hook.
    ```
 5. Sign in to Relay with **"Continue with Google"** — the account is connected automatically
    and the Builder exposes real tools: `Gmail Send Email / New Email trigger / Add Label /
@@ -107,6 +108,16 @@ Connecting a real Google account makes the Gmail, Google Drive and Google Sheets
 
 Google access & refresh tokens are **encrypted at rest** (AES-256-GCM). The key comes from
 `RELAY_TOKEN_KEY` (hex) or an auto-generated `server/data/.token-key` file.
+
+### 🔐 Secret handling
+- **Never commit** `GOOGLE_CLIENT_SECRET` or real client IDs. `server/.env` is gitignored,
+  and a pre-commit hook blocks any `.env` file:
+  ```bash
+  git config core.hooksPath .githooks    # enable the guard once
+  ```
+- If your Google OAuth credentials are ever exposed (e.g. pasted in plaintext), **rotate them
+  immediately**: in Google Cloud Console generate a new client secret and regenerate the OAuth
+  client ID, then update your local `server/.env` / environment.
 
 ## Database
 Persistent **SQLite** (`node:sqlite`) at `server/data/relay.db`. Collections: `apps`,
