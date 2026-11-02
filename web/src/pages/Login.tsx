@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 
-interface Provider { id: string; label: string; icon: string; configured: boolean }
+interface Provider { id: string; label: string; icon: string; configured: boolean; reason?: string }
 
 export default function Login() {
   const nav = useNavigate();
@@ -61,11 +61,16 @@ export default function Login() {
 
         <div className="mt24" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {providers.map((p) => (
-            <button key={p.id} className="btn oauth-btn" disabled={!p.configured || !!busy} onClick={() => oauth(p.id)}>
-              <span className="oauth-ico">{p.icon}</span>
-              {p.label}
-              {!p.configured && <span className="small muted" style={{ marginLeft: 'auto' }}>(not configured)</span>}
-            </button>
+            <div key={p.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <button className="btn oauth-btn" disabled={!p.configured || !!busy} onClick={() => oauth(p.id)}>
+                <span className="oauth-ico">{p.icon}</span>
+                {p.label}
+                {!p.configured && <span className="small muted" style={{ marginLeft: 'auto' }}>(not configured)</span>}
+              </button>
+              {!p.configured && p.reason && (
+                <span className="small muted" style={{ margin: '-2px 0 6px 12px', fontSize: 11.5 }}>{p.reason}</span>
+              )}
+            </div>
           ))}
           {demo && (
             <button className="btn oauth-btn" disabled={!!busy} onClick={demoLogin}>

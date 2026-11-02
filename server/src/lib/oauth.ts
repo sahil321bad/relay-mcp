@@ -42,10 +42,31 @@ export function isConfigured(provider: string): boolean {
   return false;
 }
 
+/** Detailed configuration status for a provider, including a human-readable reason. */
+export function providerStatus(provider: string): { configured: boolean; reason?: string } {
+  if (provider === 'google') {
+    const id = GOOGLE_CLIENT_ID();
+    const secret = GOOGLE_CLIENT_SECRET();
+    if (id && secret) return { configured: true };
+    if (!id && !secret) return { configured: false, reason: 'GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are not set' };
+    if (!id) return { configured: false, reason: 'GOOGLE_CLIENT_ID is not set' };
+    return { configured: false, reason: 'GOOGLE_CLIENT_SECRET is not set' };
+  }
+  if (provider === 'github') {
+    const id = GITHUB_CLIENT_ID();
+    const secret = GITHUB_CLIENT_SECRET();
+    if (id && secret) return { configured: true };
+    if (!id && !secret) return { configured: false, reason: 'GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET are not set' };
+    if (!id) return { configured: false, reason: 'GITHUB_CLIENT_ID is not set' };
+    return { configured: false, reason: 'GITHUB_CLIENT_SECRET is not set' };
+  }
+  return { configured: false, reason: 'Unknown provider' };
+}
+
 export function listProviders() {
   return [
-    { id: 'google', label: 'Continue with Google', icon: 'G', configured: isConfigured('google') },
-    { id: 'github', label: 'Continue with GitHub', icon: 'GH', configured: isConfigured('github') },
+    { id: 'google', label: 'Continue with Google', icon: 'G', ...providerStatus('google') },
+    { id: 'github', label: 'Continue with GitHub', icon: 'GH', ...providerStatus('github') },
   ];
 }
 
@@ -148,4 +169,16 @@ export async function getProfile(provider: string, code: string): Promise<Profil
 
 export function newSessionToken(): string {
   return randomBytes(24).toString('hex');
+}
+
+export function oauthDebug() {
+  return {
+    googleClientId: GOOGLE_CLIENT_ID(),
+    googleRedirectUri: redirectUri('google'),
+    githubClientId: GITHUB_CLIENT_ID(),
+    githubRedirectUri: redirectUri('github'),
+    baseUrl: BASE(),
+    webUrl: process.env.APP_WEB_URL || 'http://localhost:4173',
+    googleConfigured: isConfigured('google'),
+  };
 }
