@@ -2,11 +2,29 @@ import type { AppDef, Connection, Run, Workflow } from './types';
 
 const BASE = '/api';
 
+const TOKEN_KEY = 'relay_token';
+const SESSION_KEY = 'relay_session';
+
+export const getToken = () => localStorage.getItem(TOKEN_KEY);
+
+export function logout() {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(SESSION_KEY);
+  if (!window.location.pathname.startsWith('/login')) {
+    window.location.href = '/login';
+  }
+}
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(BASE + path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...init,
-  });
+  const token = getToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const res = await fetch(BASE + path, { headers, ...init });
+  if (res.status === 401 && !path.startsWith('/auth/login')) {
+    logout();
+    throw new Error('Session expired');
+  }
   if (!res.ok) {
     let msg = res.statusText;
     try {
@@ -19,6 +37,14 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  login: (password: string) =>
+    req<{ token: string }>('/auth/login', { method: 'POST', body: JSON.stringify({ password }) })
+      .then((r) => {
+        localStorage.setItem(TOKEN_KEY, r.token);
+        localStorage.setItem(SESSION_KEY, JSON.stringify({ at: Date.now() }));
+        return r;
+      }),
+
   apps: () => req<AppDef[]>('/apps'),
   app: (id: string) => req<AppDef>(`/apps/${id}`),
 

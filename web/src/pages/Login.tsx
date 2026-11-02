@@ -1,11 +1,25 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { api } from '../api';
 
 export default function Login() {
   const nav = useNavigate();
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const enter = () => {
-    localStorage.setItem('relay_session', JSON.stringify({ at: Date.now() }));
-    nav('/home');
+  const enter = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.login(password);
+      nav('/home');
+    } catch (err: any) {
+      setError(err?.message || 'Login failed');
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -25,15 +39,25 @@ export default function Login() {
           Build workflows that trigger on events and run actions across MCP-powered apps —
           email, Slack, spreadsheets, APIs and more.
         </p>
-        <div className="row" style={{ justifyContent: 'center', marginTop: 24, flexWrap: 'wrap' }}>
-          {['✉️ Mailbox', '💬 Slack', '📊 Sheets', '🔌 HTTP'].map((f) => (
-            <span className="badge" key={f}>{f}</span>
-          ))}
-        </div>
-        <button className="btn btn-primary mt24" style={{ width: '100%', justifyContent: 'center', padding: '13px' }} onClick={enter}>
-          Get started →
-        </button>
-        <p className="small muted" style={{ marginTop: 14 }}>No sign-up — demo workspace.</p>
+
+        <form onSubmit={enter} className="mt24" style={{ textAlign: 'left' }}>
+          <div className="field">
+            <label className="field-label">Workspace password</label>
+            <input
+              className="input"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="demo: relay-demo"
+              autoFocus
+            />
+            <span className="field-help">Demo workspace password is <b>relay-demo</b> (override via RELAY_PASSWORD).</span>
+          </div>
+          {error && <div className="small" style={{ color: 'var(--red)', marginBottom: 10 }}>{error}</div>}
+          <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '13px' }} disabled={busy}>
+            {busy ? 'Signing in…' : 'Sign in →'}
+          </button>
+        </form>
       </div>
     </div>
   );

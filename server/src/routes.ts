@@ -2,12 +2,17 @@ import { Router } from 'express';
 import { db, uid } from './store';
 import { APPS } from './data/seed';
 import { runWorkflow } from './lib/engine';
+import { requireAuth, loginHandler } from './lib/auth';
 
 export const router = Router();
 
 router.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'relay-api', time: new Date().toISOString() });
 });
+
+// Everything below this line requires a Bearer token (except /auth/login).
+router.post('/auth/login', loginHandler);
+router.use(requireAuth);
 
 // ---------------------------------------------------------------------------
 // Apps

@@ -3,6 +3,7 @@ import cors from 'cors';
 import { db } from './store';
 import { APPS, seedConnections } from './data/seed';
 import { router } from './routes';
+import { getWorkspaceToken, RELAY_PASSWORD } from './lib/auth';
 
 const PORT = Number(process.env.PORT || 3000);
 
@@ -22,4 +23,6 @@ seed();
 
 app.listen(PORT, () => {
   console.log(`[relay-api] listening on http://localhost:${PORT}`);
+  console.log(`[relay-api] demo password: ${RELAY_PASSWORD}`);
+  console.log(`[relay-api] API bearer token: ${getWorkspaceToken()}`);
 });

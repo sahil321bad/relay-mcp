@@ -39,6 +39,16 @@ npm run dev
 - API: http://localhost:3000
 - Web UI: http://localhost:5173 (Vite auto-opens)
 
+## Authentication
+
+Every `/api` route except `/health` and `/auth/login` requires a **Bearer token**.
+
+- POST `POST /api/auth/login` with `{"password": "<password>"}` → `{"token": "…"}`.
+- Send `Authorization: Bearer <token>` on all other requests.
+- Demo password: `relay-demo` (override via `RELAY_PASSWORD`).
+- The token is generated on first run and persisted to `server/data/token.json`
+  (or fixed via `RELAY_API_TOKEN`).
+
 The demo MCP server is bundled and spawns automatically — no external MCP servers needed.
 To point a connection at any real MCP server (stdio), open the app's connection settings and
 set the command/args (e.g. `npx @modelcontextprotocol/server-everything`).
