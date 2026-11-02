@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { db, uid } from './store';
-import { APPS } from './data/seed';
+import { getAllApps } from './data/seed';
+import { registerMcpServer } from './lib/custom-apps';
 import { runWorkflow } from './lib/engine';
 import { requireAuth, loginHandler, demoHandler, meHandler, findOrCreateUser, issueSessionToken, issueOneTimeCode, exchangeOneTimeCode } from './lib/auth';
 import { listProviders, isConfigured, buildAuthorizeUrl, getProfile, verifyState, consumeState } from './lib/oauth';
@@ -67,18 +68,48 @@ router.get('/me', meHandler);
 // ---------------------------------------------------------------------------
 router.get('/apps', (_req, res) => {
   const conns = db.connections.all();
-  const apps = APPS.map((a) => ({
+  const apps = getAllApps().map((a) => ({
     ...a,
-    connected: conns.some((c) => c.appId === a.id),
+    connected: a.custom ? true : conns.some((c) => c.appId === a.id),
     connectionCount: conns.filter((c) => c.appId === a.id).length,
   }));
   res.json(apps);
 });
 
 router.get('/apps/:id', (req, res) => {
-  const app = APPS.find((a) => a.id === req.params.id);
+  const app = getAllApps().find((a) => a.id === req.params.id);
   if (!app) return res.status(404).json({ error: 'App not found' });
   res.json(app);
+});
+
+// ---------------- Custom MCP servers ----------------
+router.get('/mcp-servers', (_req, res) => {
+  res.json(db.apps.all().filter((a) => (a as any).custom));
+});
+
+router.post('/mcp-servers', async (req, res) => {
+  const idp = (req as any).user?.provider;
+  if (idp !== 'workspace' && idp !== 'demo') {
+    return res.status(403).json({ error: 'Only trusted identities may register MCP servers' });
+  }
+  try {
+    const app = await registerMcpServer({
+      name: String(req.body?.name || ''),
+      command: String(req.body?.command || ''),
+      args: Array.isArray(req.body?.args) ? req.body.args.map(String) : [],
+    });
+    db.apps.insert(app);
+    res.status(201).json(app);
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'Failed to connect MCP server' });
+  }
+});
+
+router.delete('/mcp-servers/:id', (req, res) => {
+  const app = db.apps.get(req.params.id);
+  if (!app || !(app as any).custom) return res.status(404).json({ error: 'Not found' });
+  db.apps.remove(req.params.id);
+  res.json({ ok: true });
 });
 
 // ---------------------------------------------------------------------------
@@ -90,13 +121,13 @@ router.get('/connections', (_req, res) => {
 
 router.post('/connections', (req, res) => {
   const { appId, name, config } = req.body || {};
-  if (!appId || !APPS.some((a) => a.id === appId)) {
+  if (!appId || !getAllApps().some((a) => a.id === appId)) {
     return res.status(400).json({ error: 'Invalid appId' });
   }
   const conn = db.connections.insert({
     id: uid('conn'),
     appId,
-    name: name || APPS.find((a) => a.id === appId)!.name + ' connection',
+    name: name || getAllApps().find((a) => a.id === appId)!.name + ' connection',
     config: config || {},
     status: 'connected',
     createdAt: new Date().toISOString(),

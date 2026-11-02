@@ -29,6 +29,7 @@ export interface AppDef {
   color: string;
   connected?: boolean;
   connectionCount?: number;
+  custom?: boolean;
   mcp: { command: string; args: string[] };
   steps: StepDef[];
 }

@@ -4,7 +4,7 @@
 // and {{actions.<i>.<path>}} (output of the i-th action).
 import { db, uid } from '../store';
 import { mcp } from './mcp-client';
-import { APPS } from '../data/seed';
+import { getAllApps } from '../data/seed';
 
 export interface WorkflowInput {
   id?: string;
@@ -95,14 +95,15 @@ export async function runWorkflow(workflow: WorkflowInput, opts: { forceSample?:
   };
 
   try {
-    const triggerApp = APPS.find((a) => a.id === workflow.trigger.appId);
+    const allApps = getAllApps();
+    const triggerApp = allApps.find((a) => a.id === workflow.trigger.appId);
     const triggerStep = triggerApp?.steps.find((s) => s.id === workflow.trigger.id);
     if (!triggerStep) throw new Error(`Unknown trigger step: ${workflow.trigger.id}`);
 
     log('info', `Polling trigger “${triggerStep.label}” via MCP tool ${workflow.trigger.id}`);
 
     const triggerArgs = coerceSteps(workflow.trigger.config, triggerStep.fields);
-    const triggerResult = await mcp.callTool(workflow.trigger.id, triggerArgs);
+    const triggerResult = await mcp.callTool(triggerApp!.mcp, workflow.trigger.id, triggerArgs);
     let events = extractEvents(triggerResult);
 
     if (opts.forceSample || events.length === 0) {
@@ -121,14 +122,14 @@ export async function runWorkflow(workflow: WorkflowInput, opts: { forceSample?:
 
       for (let a = 0; a < workflow.actions.length; a++) {
         const action = workflow.actions[a];
-        const app = APPS.find((x) => x.id === action.appId);
+        const app = allApps.find((x) => x.id === action.appId);
         const stepDef = app?.steps.find((s) => s.id === action.id);
         if (!stepDef) throw new Error(`Unknown action step: ${action.id}`);
         const label = stepDef.label ?? action.id;
         stepLogs.push({ stepId: action.id, appId: action.appId, label, status: 'running', output: null });
         log('info', `  → ${label} (${action.id})`);
         const args = resolveValue(coerceSteps(action.config, stepDef.fields), ctx);
-        const output = await mcp.callTool(action.id, args);
+        const output = await mcp.callTool(app!.mcp, action.id, args);
         ctx.actions.push({ output });
         stepLogs[a].status = 'success';
         stepLogs[a].output = output;

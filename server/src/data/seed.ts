@@ -33,6 +33,7 @@ export interface AppDef {
   color: string;
   mcp: { command: string; args: string[] };
   steps: StepDef[];
+  custom?: boolean;
 }
 
 export const APPS: AppDef[] = [
@@ -205,6 +206,12 @@ export const APPS: AppDef[] = [
       },
     ],
   },
+];
+
+/** Bundled + user-registered (custom) MCP apps. */
+export const getAllApps = (): AppDef[] => [
+  ...APPS,
+  ...(db.apps.all().filter((a) => (a as any).custom) as AppDef[]),
 ];
 
 export const seedConnections = () => {

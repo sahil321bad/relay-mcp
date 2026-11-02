@@ -11,6 +11,12 @@ export default function Apps() {
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
 
+  const [mcpOpen, setMcpOpen] = useState(false);
+  const [mcpName, setMcpName] = useState('My MCP server');
+  const [mcpCmd, setMcpCmd] = useState('');
+  const [mcpArgs, setMcpArgs] = useState('');
+  const [mcpError, setMcpError] = useState<string | null>(null);
+
   const refresh = useCallback(async () => {
     const [a, c] = await Promise.all([api.apps(), api.connections()]);
     setApps(a); setConnections(c); setLoading(false);
@@ -18,10 +24,7 @@ export default function Apps() {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  const openConnect = (app: AppDef) => {
-    setConnectApp(app);
-    setName('');
-  };
+  const openConnect = (app: AppDef) => { setConnectApp(app); setName(''); };
 
   const doConnect = async () => {
     if (!connectApp) return;
@@ -30,13 +33,27 @@ export default function Apps() {
       await api.createConnection({ appId: connectApp.id, name });
       setConnectApp(null);
       await refresh();
-    } finally {
-      setBusy(false);
-    }
+    } finally { setBusy(false); }
   };
 
-  const doDisconnect = async (id: string) => {
-    await api.deleteConnection(id);
+  const doDisconnect = async (id: string) => { await api.deleteConnection(id); await refresh(); };
+
+  const addMcp = async () => {
+    if (!mcpCmd.trim()) { setMcpError('Command is required'); return; }
+    setBusy(true); setMcpError(null);
+    try {
+      const args = mcpArgs.split(',').map((s) => s.trim()).filter(Boolean);
+      await api.addMcpServer({ name: mcpName || 'Custom MCP server', command: mcpCmd.trim(), args });
+      setMcpOpen(false);
+      await refresh();
+    } catch (e: any) {
+      setMcpError(e?.message || 'Failed to connect');
+    } finally { setBusy(false); }
+  };
+
+  const removeMcp = async (app: AppDef) => {
+    if (!confirm(`Remove MCP server "${app.name}"?`)) return;
+    await api.deleteMcpServer(app.id);
     await refresh();
   };
 
@@ -44,26 +61,36 @@ export default function Apps() {
 
   return (
     <div>
-      <h1 style={{ margin: '0 0 4px', fontSize: 22 }}>Apps</h1>
-      <p className="muted" style={{ margin: '0 0 20px' }}>Every app here is an MCP server. Connect them to build workflows.</p>
+      <div className="row row-between mb16">
+        <div>
+          <h1 className="page-title">App connections</h1>
+          <p className="muted small" style={{ margin: '4px 0 0' }}>Every app is an MCP server (stdio). Connect them to build workflows.</p>
+        </div>
+        <div className="row">
+          <button className="btn" onClick={() => { setMcpOpen(true); setMcpError(null); }}>+ Add MCP server</button>
+        </div>
+      </div>
 
       <div className="grid grid-4">
         {apps.map((app) => (
           <div key={app.id} className="card app-card" onClick={() => openConnect(app)}>
-            <AppIcon icon={app.icon} color={app.color} />
+            <div className="row row-between">
+              <AppIcon icon={app.icon} color={app.color} />
+              {app.custom && (
+                <button className="btn btn-ghost btn-sm" style={{ padding: '4px 8px' }} onClick={(e) => { e.stopPropagation(); removeMcp(app); }}>✕</button>
+              )}
+            </div>
             <div className="app-name">{app.name}</div>
-            <div className="app-tagline">{app.tagline}</div>
+            <div className="app-tagline">{app.custom ? app.tagline : app.tagline}</div>
             <div className="app-meta">
-              <Badge tone={app.connected ? 'green' : 'amber'} dot>
-                {app.connected ? `Connected` : 'Not connected'}
-              </Badge>
-              <Badge>{app.steps.filter((s) => s.kind === 'action').length} actions</Badge>
+              <Badge tone={app.connected ? 'green' : 'amber'} dot>{app.connected ? 'Connected' : 'Not connected'}</Badge>
+              {app.custom && <Badge tone="blue">MCP</Badge>}
             </div>
           </div>
         ))}
       </div>
 
-      <h2 style={{ margin: '36px 0 14px', fontSize: 18 }}>Connections</h2>
+      <h2 className="section-title" style={{ margin: '32px 0 12px' }}>Connections</h2>
       {connections.length === 0 ? (
         <div className="card empty"><p>No connections yet.</p></div>
       ) : (
@@ -89,6 +116,7 @@ export default function Apps() {
         </div>
       )}
 
+      {/* Connect modal */}
       <Modal open={!!connectApp} onClose={() => setConnectApp(null)} title={`Connect ${connectApp?.name}`}>
         {connectApp && (
           <div>
@@ -103,18 +131,40 @@ export default function Apps() {
               <label className="field-label">Connection name</label>
               <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder={`${connectApp.name} connection`} />
             </div>
-            <div className="field">
-              <label className="field-label">MCP server</label>
-              <div className="small muted mono" style={{ padding: '10px', background: 'var(--bg)', borderRadius: 10 }}>
-                {connectApp.mcp.command} {connectApp.mcp.args.join(' ')}
+            {!connectApp.custom && (
+              <div className="field">
+                <label className="field-label">MCP server</label>
+                <div className="small muted mono" style={{ padding: '10px', background: 'var(--bg)', borderRadius: 10 }}>
+                  {connectApp.mcp.command} {connectApp.mcp.args.join(' ')}
+                </div>
               </div>
-              <span className="field-help">Bundled demo MCP server — spawns over stdio (JSON-RPC). Point this at any real MCP server by editing the app config in the API.</span>
-            </div>
+            )}
             <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={doConnect} disabled={busy}>
               {busy ? 'Connecting…' : 'Connect'}
             </button>
           </div>
         )}
+      </Modal>
+
+      {/* Add MCP server modal */}
+      <Modal open={mcpOpen} onClose={() => setMcpOpen(false)} title="Add an MCP server">
+        <div className="field">
+          <label className="field-label">Name</label>
+          <input className="input" value={mcpName} onChange={(e) => setMcpName(e.target.value)} />
+        </div>
+        <div className="field">
+          <label className="field-label req">Command</label>
+          <input className="input" value={mcpCmd} onChange={(e) => setMcpCmd(e.target.value)} placeholder="e.g. npx" />
+          <span className="field-help">The program used to launch the MCP server (stdio).</span>
+        </div>
+        <div className="field">
+          <label className="field-label">Arguments (comma separated)</label>
+          <input className="input" value={mcpArgs} onChange={(e) => setMcpArgs(e.target.value)} placeholder="e.g. @modelcontextprotocol/server-everything" />
+        </div>
+        {mcpError && <div className="small" style={{ color: 'var(--red)', marginBottom: 10 }}>{mcpError}</div>}
+        <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={addMcp} disabled={busy}>
+          {busy ? 'Connecting…' : 'Discover & add'}
+        </button>
       </Modal>
     </div>
   );
