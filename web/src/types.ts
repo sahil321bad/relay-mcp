@@ -31,6 +31,7 @@ export interface AppDef {
   connectionCount?: number;
   custom?: boolean;
   mcp: { command: string; args: string[] };
+  google?: boolean;
   steps: StepDef[];
 }
 

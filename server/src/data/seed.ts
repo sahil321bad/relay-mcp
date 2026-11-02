@@ -1,4 +1,5 @@
 import { db } from '../store';
+import { GMail_STEPS, DRIVE_STEPS } from './google-catalog';
 
 // MCP-backed app catalog. Each app maps to a demo MCP server (stdio) and exposes
 // a set of trigger/action steps. The `fields` metadata drives the builder UI.
@@ -348,15 +349,21 @@ export const APPS: AppDef[] = [
 ];
 
 /** Bundled + user-registered (custom) MCP apps. */
-export const getAllApps = (): AppDef[] => [
-  ...APPS,
-  ...(db.apps.all().filter((a) => (a as any).custom) as AppDef[]),
-];
+export const getAllApps = (): AppDef[] => {
+  const builtin = APPS.map((a) => {
+    if (a.id === 'gmail') return { ...a, steps: GMail_STEPS };
+    if (a.id === 'drive') return { ...a, steps: DRIVE_STEPS };
+    return a;
+  });
+  return [...builtin, ...(db.apps.all().filter((a) => (a as any).custom) as AppDef[])];
+};
 
 export const seedConnections = () => {
   const existing = db.connections.all();
   if (existing.length > 0) return;
   for (const app of APPS) {
+    // Google apps connect via real OAuth, not demo connections.
+    if ((app as any).google) continue;
     db.connections.insert({
       id: `conn_${app.id}`,
       appId: app.id,

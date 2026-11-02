@@ -76,6 +76,10 @@ function extractEvents(result: any): any[] {
   if (result && Array.isArray(result.emails)) return result.emails;
   if (result && Array.isArray(result.rows)) return result.rows;
   if (result && Array.isArray(result.items)) return result.items;
+  if (result && Array.isArray(result.files)) return result.files;
+  if (result && Array.isArray(result.conversations)) return result.conversations;
+  if (result && Array.isArray(result.labels)) return result.labels;
+  if (result && Array.isArray(result.threads)) return result.threads;
   if (Array.isArray(result)) return result;
   return [result || {}];
 }

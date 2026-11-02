@@ -62,6 +62,31 @@ async function gfetch(token: string, method: string, url: string, body?: any): P
   return data;
 }
 
+/** Fetch with a raw body + explicit Content-Type (used for multipart uploads). */
+async function gfetchBody(token: string, method: string, url: string, body: string, contentType: string): Promise<any> {
+  const res = await fetch(url, {
+    method,
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': contentType },
+    body,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error?.message || data.message || `Google API error ${res.status}`);
+  return data;
+}
+
+/** True if any user in the workspace has a connected Google account (refresh token). */
+export function googleActive(): boolean {
+  const users = db.users.all();
+  return users.some((u) => {
+    if (!u.googleRefreshToken) return false;
+    try {
+      return !!secret(u.googleRefreshToken);
+    } catch {
+      return false;
+    }
+  });
+}
+
 export const google = {
   gmail: {
     listMessages: (token: string, q = '', maxResults = 10) =>
@@ -77,12 +102,49 @@ export const google = {
     trash: (token: string, id: string) =>
       gfetch(token, 'POST', `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}/trash`),
     listLabels: (token: string) => gfetch(token, 'GET', 'https://gmail.googleapis.com/gmail/v1/users/me/labels'),
+    createLabel: (token: string, name: string) =>
+      gfetch(token, 'POST', 'https://gmail.googleapis.com/gmail/v1/users/me/labels', { name }),
+    listThreads: (token: string, q = '', maxResults = 15) =>
+      gfetch(token, 'GET', `https://gmail.googleapis.com/gmail/v1/users/me/threads?maxResults=${maxResults}${q ? `&q=${encodeURIComponent(q)}` : ''}`),
+    getThread: (token: string, id: string) =>
+      gfetch(token, 'GET', `https://gmail.googleapis.com/gmail/v1/users/me/threads/${id}`),
+    getMessageFull: (token: string, id: string) =>
+      gfetch(token, 'GET', `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`),
   },
   drive: {
     listFiles: (token: string, q = '') =>
       gfetch(token, 'GET', `https://www.googleapis.com/drive/v3/files?pageSize=50&fields=files(id,name,mimeType)${q ? `&q=${encodeURIComponent(q)}` : ''}`),
+    newFiles: (token: string, q = '') =>
+      gfetch(token, 'GET', `https://www.googleapis.com/drive/v3/files?orderBy=createdTime%20desc&pageSize=15&fields=files(id,name,mimeType,createdTime)${q ? `&q=${encodeURIComponent(q)}` : ''}`),
     createFolder: (token: string, name: string) =>
       gfetch(token, 'POST', 'https://www.googleapis.com/drive/v3/files', { name, mimeType: 'application/vnd.google-apps.folder' }),
+    createFile: (token: string, name: string, mimeType: string, content = '') => {
+      const boundary = `----RelayBoundary${Date.now()}`;
+      const meta = JSON.stringify({ name, mimeType });
+      const body =
+        `--${boundary}\r\n` +
+        `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
+        `${meta}\r\n` +
+        `--${boundary}\r\n` +
+        `Content-Type: ${mimeType}\r\n\r\n` +
+        `${content}\r\n` +
+        `--${boundary}--`;
+      return gfetchBody(
+        token,
+        'POST',
+        'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
+        body,
+        `multipart/related; boundary=${boundary}`,
+      );
+    },
+    copyFile: (token: string, fileId: string, name?: string) =>
+      gfetch(token, 'POST', `https://www.googleapis.com/drive/v3/files/${fileId}/copy`, name ? { name } : {}),
+    getFile: (token: string, fileId: string) =>
+      gfetch(token, 'GET', `https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,mimeType,size,createdTime`),
+    update: (token: string, fileId: string, body: any) =>
+      gfetch(token, 'PATCH', `https://www.googleapis.com/drive/v3/files/${fileId}`, body),
+    trash: (token: string, fileId: string) =>
+      gfetch(token, 'PATCH', `https://www.googleapis.com/drive/v3/files/${fileId}`, { trashed: true }),
   },
   sheets: {
     append: (token: string, spreadsheetId: string, range: string, values: any[][]) =>

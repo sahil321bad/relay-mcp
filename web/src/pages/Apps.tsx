@@ -155,21 +155,34 @@ export default function Apps() {
                 <div className="small muted">{connectApp.description}</div>
               </div>
             </div>
-            <div className="field">
-              <label className="field-label">Connection name</label>
-              <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder={`${connectApp.name} connection`} />
-            </div>
-            {!connectApp.custom && (
-              <div className="field">
-                <label className="field-label">MCP server</label>
-                <div className="small muted mono" style={{ padding: '10px', background: 'var(--bg)', borderRadius: 10 }}>
-                  {connectApp.mcp.command} {connectApp.mcp.args.join(' ')}
-                </div>
+            {connectApp.google ? (
+              <div>
+                <p className="small muted mb16">
+                  This is a real Google-powered app. Connect by signing in with your Google account.
+                </p>
+                <a className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} href="/api/auth/oauth/google">
+                  Continue with Google
+                </a>
               </div>
+            ) : (
+              <>
+                <div className="field">
+                  <label className="field-label">Connection name</label>
+                  <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder={`${connectApp.name} connection`} />
+                </div>
+                {!connectApp.custom && (
+                  <div className="field">
+                    <label className="field-label">MCP server</label>
+                    <div className="small muted mono" style={{ padding: '10px', background: 'var(--bg)', borderRadius: 10 }}>
+                      {connectApp.mcp.command} {connectApp.mcp.args.join(' ')}
+                    </div>
+                  </div>
+                )}
+                <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={doConnect} disabled={busy}>
+                  {busy ? 'Connecting…' : 'Connect'}
+                </button>
+              </>
             )}
-            <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={doConnect} disabled={busy}>
-              {busy ? 'Connecting…' : 'Connect'}
-            </button>
           </div>
         )}
       </Modal>
