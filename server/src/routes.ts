@@ -5,7 +5,7 @@ import { registerMcpServer } from './lib/custom-apps';
 import { runWorkflow } from './lib/engine';
 import { hasGoogle } from './lib/google';
 import { requireAuth, loginHandler, demoHandler, meHandler, findOrCreateUser, issueSessionToken, issueOneTimeCode, exchangeOneTimeCode } from './lib/auth';
-import { listProviders, isConfigured, buildAuthorizeUrl, getProfile, verifyState, consumeState } from './lib/oauth';
+import { listProviders, isConfigured, buildAuthorizeUrl, getProfile, verifyState, consumeState, oauthDebug } from './lib/oauth';
 
 export const router = Router();
 
@@ -16,6 +16,15 @@ router.get('/health', (_req, res) => {
 // ---------------- Public auth (no token required) ----------------
 router.get('/auth/providers', (_req, res) => {
   res.json({ providers: listProviders(), demo: true });
+});
+
+// Diagnostic: report exactly what this process would send to Google/GitHub.
+// Requires authentication (Bearer token) and is disabled in production.
+router.get('/auth/debug', requireAuth, (_req, res) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).json({ error: 'Not found' });
+  }
+  res.json(oauthDebug());
 });
 
 router.post('/auth/login', loginHandler);
