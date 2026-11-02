@@ -1,0 +1,10 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+const f = join(process.cwd(), 'web', 'dist', 'assets', 'index-Gs-ulCJP.js');
+const s = readFileSync(f, 'utf8');
+console.log('bytes:', s.length);
+console.log('has jsx-runtime:', s.includes('jsx-runtime'));
+console.log('has createRoot:', s.includes('createRoot'));
+console.log('has raw JSX <div:', s.includes('<div'));
+console.log('has StrictMode:', s.includes('StrictMode'));
+console.log('has elementToString tag:', s.includes('jsxDEV') || s.includes('jsx('));

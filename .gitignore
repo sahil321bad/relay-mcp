@@ -1,0 +1,7 @@
+node_modules/
+dist/
+*.log
+server/data/*.json
+!server/data/seed.json
+.env
+.DS_Store
