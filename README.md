@@ -51,7 +51,9 @@ Every `/api` route except `/health` and `/auth/*` requires a **Bearer token**
   persisted to `server/data/token.json` (or fixed via `RELAY_API_TOKEN`).
 
 ### Google / GitHub OAuth
-Set these env vars on the API process:
+Copy `server/.env.example` → `server/.env` and fill in real values (`server/.env`
+is git-ignored — **never commit it**; it holds secrets). Set these env vars on the
+API process:
 
 ```
 GOOGLE_CLIENT_ID=...        GOOGLE_CLIENT_SECRET=...
