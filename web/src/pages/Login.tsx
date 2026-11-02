@@ -19,7 +19,14 @@ export default function Login() {
         const r = await api.providers();
         setProviders(r.providers);
         setDemo(r.demo);
-        if (res.error) setError('OAuth login was not completed');
+        if (res.error) {
+          const e = String(res.error);
+          setError(
+            e.includes('access_denied') || e.includes('blocked') || e.includes('unverified')
+              ? `${e} — add your Google account under Test users in the OAuth consent screen (Google Cloud Console).`
+              : e,
+          );
+        }
       } catch { /* ignore */ }
     })();
   }, []);

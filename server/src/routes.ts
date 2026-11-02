@@ -54,8 +54,10 @@ router.get('/auth/oauth/:provider/callback', async (req, res) => {
     const user = findOrCreateUser(profile);
     const otc = issueOneTimeCode(user.id);
     consumeState(state); // handshake complete → state is now single-use/consumed
+    console.log(`[oauth] ${p} login success for ${profile.email} -> ${web}/login?code=…`);
     res.redirect(`${web}/login?code=${encodeURIComponent(otc)}`);
   } catch (e: any) {
+    console.error(`[oauth] callback failed for ${req.params.provider}:`, e?.message || e);
     res.redirect(`${web}/login?error=${encodeURIComponent(e?.message || 'oauth_failed')}`);
   }
 });
